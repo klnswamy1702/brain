@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import type { Session } from "../shared/types";
 import { storage } from "../shared/storage";
+import { captureTabs } from "../shared/tabs";
+import { summarizeTabs } from "../shared/summarize";
 
 export function App() {
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -8,11 +10,18 @@ export function App() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
 
+  const [geminiApiKey, setGeminiApiKey] = useState<string | null>(null);
+  const [apiKeyInput, setApiKeyInput] = useState("");
+  const [isSummarizing, setIsSummarizing] = useState(false);
+
   const loadData = useCallback(async () => {
     const allSessions = await storage.get("sessions");
     const activeId = await storage.get("currentSessionId");
+    const key = await storage.get("geminiApiKey");
     setSessions(allSessions);
     setCurrentSessionId(activeId);
+    setGeminiApiKey(key);
+    if (key) setApiKeyInput(key);
   }, []);
 
   useEffect(() => {
@@ -71,6 +80,49 @@ export function App() {
     setCurrentSessionId(id);
   };
 
+  const handleSaveApiKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanKey = apiKeyInput.trim();
+    await storage.set("geminiApiKey", cleanKey);
+    setGeminiApiKey(cleanKey);
+  };
+
+  const handleCaptureAndSummarize = async () => {
+    if (!currentSessionId || !geminiApiKey) return;
+    
+    setIsSummarizing(true);
+    try {
+      const tabs = await captureTabs();
+      
+      // Update session with tabs first
+      let updated = sessions.map(s => 
+        s.id === currentSessionId ? { ...s, tabs, summary: "Summarizing..." } : s
+      );
+      setSessions(updated);
+      await storage.set("sessions", updated);
+
+      // Call API
+      const summary = await summarizeTabs(tabs, geminiApiKey);
+      
+      // Update session with summary
+      updated = sessions.map(s => 
+        s.id === currentSessionId ? { ...s, summary } : s
+      );
+      setSessions(updated);
+      await storage.set("sessions", updated);
+    } catch (error: any) {
+      console.error("Summarize error:", error);
+      const errorMessage = error?.message || String(error);
+      const updated = sessions.map(s => 
+        s.id === currentSessionId ? { ...s, summary: `Failed to summarize tabs: ${errorMessage}` } : s
+      );
+      setSessions(updated);
+      await storage.set("sessions", updated);
+    } finally {
+      setIsSummarizing(false);
+    }
+  };
+
   const activeSessions = sessions.filter((s) => !s.endedAt);
   const endedSessions = sessions.filter((s) => s.endedAt);
 
@@ -95,8 +147,26 @@ export function App() {
           type="search"
           placeholder="Search Memory... (coming soon)"
           disabled
-          style={{ opacity: 0.5 }}
+          style={{ opacity: 0.5, width: "100%", padding: "8px 12px", borderRadius: "var(--radius)", border: "1px solid var(--border)", background: "var(--bg-secondary)", color: "var(--text)" }}
         />
+      </section>
+
+      {/* Settings (API Key) */}
+      <section style={{ marginBottom: 32, padding: 16, background: "var(--bg-secondary)", borderRadius: "var(--radius)" }}>
+        <h2 style={{...sectionHeadingStyle, marginBottom: 8}}>Settings</h2>
+        <form onSubmit={handleSaveApiKey} style={{ display: "flex", gap: 8 }}>
+          <input
+            type="password"
+            placeholder="Gemini API Key"
+            value={apiKeyInput}
+            onChange={(e) => setApiKeyInput(e.target.value)}
+            style={{ flex: 1, padding: "6px 12px", fontSize: 13, borderRadius: "var(--radius)", border: "1px solid var(--border)" }}
+          />
+          <button className="btn-primary" type="submit">
+            Save Key
+          </button>
+        </form>
+        {!geminiApiKey && <p style={{ fontSize: 12, color: "var(--danger)", marginTop: 8 }}>API key required for summarization.</p>}
       </section>
 
       {/* Active Sessions */}
@@ -114,7 +184,8 @@ export function App() {
         ) : (
           <ul style={listStyle}>
             {activeSessions.map((session) => (
-              <li key={session.id} style={{
+              <div key={session.id} style={{ display: "flex", flexDirection: "column" }}>
+              <li style={{
                 ...cardStyle,
                 border: session.id === currentSessionId
                   ? "1px solid var(--accent)"
@@ -150,9 +221,16 @@ export function App() {
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   {session.id === currentSessionId && (
-                    <span style={{ fontSize: 11, color: "var(--accent)", fontWeight: 600, textTransform: "uppercase" }}>
-                      Active
-                    </span>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button 
+                        className="btn-primary" 
+                        onClick={handleCaptureAndSummarize}
+                        disabled={isSummarizing || !geminiApiKey}
+                        style={{ padding: "4px 8px", fontSize: 11 }}
+                      >
+                        {isSummarizing ? "Summarizing..." : "Capture & Summarize Tabs"}
+                      </button>
+                    </div>
                   )}
                   {session.id !== currentSessionId && (
                     <button className="btn-ghost" onClick={() => handleResumeSession(session.id)}
@@ -172,6 +250,22 @@ export function App() {
                   </button>
                 </div>
               </li>
+              {/* Summary and Tabs Display */}
+              {(session.summary || (session.tabs && session.tabs.length > 0)) && (
+                <div style={{ padding: "12px 16px", background: "var(--bg-secondary)", border: "1px solid var(--border)", borderTop: "none", borderBottomLeftRadius: "var(--radius)", borderBottomRightRadius: "var(--radius)", marginTop: -8 }}>
+                  {session.tabs && (
+                    <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>
+                      <strong>{session.tabs.length} tabs captured</strong>
+                    </div>
+                  )}
+                  {session.summary && (
+                    <div style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+                      {session.summary}
+                    </div>
+                  )}
+                </div>
+              )}
+              </div>
             ))}
           </ul>
         )}
@@ -186,7 +280,8 @@ export function App() {
           </h2>
           <ul style={listStyle}>
             {endedSessions.map((session) => (
-              <li key={session.id} style={{ ...cardStyle, opacity: 0.7 }}>
+              <div key={session.id} style={{ display: "flex", flexDirection: "column" }}>
+              <li style={{ ...cardStyle, opacity: 0.7 }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 500, fontSize: 14 }}>{session.title}</div>
                   <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
@@ -203,6 +298,21 @@ export function App() {
                   </button>
                 </div>
               </li>
+              {(session.summary || (session.tabs && session.tabs.length > 0)) && (
+                <div style={{ padding: "12px 16px", background: "var(--bg-secondary)", border: "1px solid var(--border)", borderTop: "none", borderBottomLeftRadius: "var(--radius)", borderBottomRightRadius: "var(--radius)", marginTop: -8, opacity: 0.7 }}>
+                  {session.tabs && (
+                    <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>
+                      <strong>{session.tabs.length} tabs captured</strong>
+                    </div>
+                  )}
+                  {session.summary && (
+                    <div style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+                      {session.summary}
+                    </div>
+                  )}
+                </div>
+              )}
+              </div>
             ))}
           </ul>
         </section>

@@ -3,6 +3,7 @@ import type { StorageSchema } from "./types";
 const DEFAULTS: StorageSchema = {
   sessions: [],
   currentSessionId: null,
+  geminiApiKey: null,
 };
 
 const isExtension =
@@ -43,7 +44,8 @@ export const storage = {
     }
     const sessions = await this.get("sessions");
     const currentSessionId = await this.get("currentSessionId");
-    return { sessions, currentSessionId };
+    const geminiApiKey = await this.get("geminiApiKey");
+    return { sessions, currentSessionId, geminiApiKey };
   },
 
   async clear(): Promise<void> {

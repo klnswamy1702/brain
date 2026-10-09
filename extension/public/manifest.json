@@ -3,7 +3,7 @@
   "name": "Research Brain",
   "version": "0.1.0",
   "description": "Your second brain for research sessions",
-  "permissions": ["storage"],
+  "permissions": ["storage", "tabs"],
   "action": {
     "default_popup": "popup.html",
     "default_title": "Research Brain"

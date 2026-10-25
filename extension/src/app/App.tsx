@@ -3,10 +3,14 @@ import type {
   Session,
   TabGroup,
   CapturedTab,
+  TabInfo,
   CaptureResponse,
   RestoreResponse,
 } from "../shared/types";
 import { storage } from "../shared/storage";
+import { captureCurrentTabs, openTab } from "../shared/tabs";
+import { EndMyDayModal } from "./EndMyDayModal";
+import { cleanTitle } from "../shared/session-generator";
 
 type View = "home" | "session-detail";
 
@@ -25,8 +29,14 @@ export function App() {
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [editGroupTitle, setEditGroupTitle] = useState("");
 
-  // Expanded groups
+  // Expanded groups & sessions
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
+
+  // End My Day Modal state (Feature 3)
+  const [isEndMyDayOpen, setIsEndMyDayOpen] = useState(false);
+  const [endMyDayTabs, setEndMyDayTabs] = useState<(CapturedTab | TabInfo)[]>([]);
+  const [saveConfirmation, setSaveConfirmation] = useState<string | null>(null);
 
   const [view] = useState<View>("home");
 
@@ -42,6 +52,69 @@ export function App() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Handle #end-my-day hash route
+  useEffect(() => {
+    if (window.location.hash === "#end-my-day") {
+      handleOpenEndMyDay();
+      try {
+        history.replaceState(null, "", window.location.pathname);
+      } catch {
+        // ignore in non-standard context
+      }
+    }
+  }, [tabGroups]);
+
+  // ── End My Day (Feature 3) ────────────────────────────────
+
+  const handleOpenEndMyDay = async () => {
+    // 1. Gather all tabs from saved tab groups
+    const groupTabs: CapturedTab[] = [];
+    for (const group of tabGroups) {
+      groupTabs.push(...group.tabs);
+    }
+
+    // 2. Also check if there are open tabs in the current window
+    let currentTabs: CapturedTab[] = [];
+    try {
+      currentTabs = await captureCurrentTabs();
+    } catch {
+      // not in extension context or failed
+    }
+
+    // Combine and deduplicate URLs
+    const seenUrls = new Set<string>();
+    const combinedTabs: CapturedTab[] = [];
+
+    for (const tab of [...groupTabs, ...currentTabs]) {
+      if (!seenUrls.has(tab.url)) {
+        seenUrls.add(tab.url);
+        combinedTabs.push(tab);
+      }
+    }
+
+    setEndMyDayTabs(combinedTabs);
+    setIsEndMyDayOpen(true);
+  };
+
+  const handleSaveEndMyDaySession = async (
+    newSession: Session,
+    clearGroups: boolean,
+  ) => {
+    const updated = [newSession, ...sessions];
+    await storage.set("sessions", updated);
+    setSessions(updated);
+
+    if (clearGroups) {
+      await storage.set("tabGroups", []);
+      setTabGroups([]);
+    }
+
+    setSaveConfirmation(
+      `✓ Research Session "${newSession.title}" saved successfully!`,
+    );
+    setExpandedSessionId(newSession.id);
+  };
 
   // ── Capture ──────────────────────────────────────────────
 
@@ -68,7 +141,11 @@ export function App() {
 
   // ── Restore ──────────────────────────────────────────────
 
-  const handleRestoreTab = (groupId: string, url: string, removeAfterRestore: boolean) => {
+  const handleRestoreTab = (
+    groupId: string,
+    url: string,
+    removeAfterRestore: boolean,
+  ) => {
     chrome.runtime.sendMessage(
       { action: "RESTORE_TAB", payload: { groupId, url, removeAfterRestore } },
       (_response: RestoreResponse) => {
@@ -116,6 +193,11 @@ export function App() {
       id: crypto.randomUUID(),
       title: `Session ${sessions.length + 1}`,
       createdAt: Date.now(),
+      topics: ["General"],
+      keyLearnings: [],
+      openQuestions: [],
+      sources: [],
+      tabCount: 0,
     };
     const updated = [session, ...sessions];
     await storage.set("sessions", updated);
@@ -124,23 +206,15 @@ export function App() {
     setCurrentSessionId(session.id);
   };
 
-  const handleEndDay = async () => {
-    if (!currentSessionId) return;
-    const updated = sessions.map((s) =>
-      s.id === currentSessionId ? { ...s, endedAt: Date.now() } : s,
-    );
-    await storage.set("sessions", updated);
-    await storage.set("currentSessionId", null);
-    setSessions(updated);
-    setCurrentSessionId(null);
-  };
-
   const handleDeleteSession = async (id: string) => {
     const updated = sessions.filter((s) => s.id !== id);
     await storage.set("sessions", updated);
     if (currentSessionId === id) {
       await storage.set("currentSessionId", null);
       setCurrentSessionId(null);
+    }
+    if (expandedSessionId === id) {
+      setExpandedSessionId(null);
     }
     setSessions(updated);
   };
@@ -169,7 +243,7 @@ export function App() {
 
   // ── Toggle expand ────────────────────────────────────────
 
-  const toggleExpand = (groupId: string) => {
+  const toggleExpandGroup = (groupId: string) => {
     setExpandedGroups((prev) => {
       const next = new Set(prev);
       if (next.has(groupId)) next.delete(groupId);
@@ -178,12 +252,16 @@ export function App() {
     });
   };
 
+  const toggleExpandSession = (sessionId: string) => {
+    setExpandedSessionId((prev) => (prev === sessionId ? null : sessionId));
+  };
+
   // ── Helpers ──────────────────────────────────────────────
 
-  const getFaviconUrl = (tab: CapturedTab) => {
-    if (tab.favIconUrl) return tab.favIconUrl;
+  const getFaviconUrl = (url: string, favIconUrl?: string) => {
+    if (favIconUrl) return favIconUrl;
     try {
-      return `https://www.google.com/s2/favicons?domain=${new URL(tab.url).hostname}&sz=16`;
+      return `https://www.google.com/s2/favicons?domain=${new URL(url).hostname}&sz=16`;
     } catch {
       return undefined;
     }
@@ -197,46 +275,109 @@ export function App() {
       minute: "2-digit",
     });
 
+  const totalCapturedTabsCount = tabGroups.reduce(
+    (acc, g) => acc + g.tabs.length,
+    0,
+  );
+
   // ── Render ───────────────────────────────────────────────
 
   if (view !== "home") return null;
 
-  const activeSessions = sessions.filter((s) => !s.endedAt);
-  const endedSessions = sessions.filter((s) => s.endedAt);
-
   return (
-    <div style={{ maxWidth: 800, margin: "0 auto", padding: "32px 24px" }}>
+    <div style={{ maxWidth: 840, margin: "0 auto", padding: "32px 24px" }}>
       {/* Header */}
       <header
         style={{
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          marginBottom: 32,
+          marginBottom: 28,
         }}
       >
-        <h1 style={{ fontSize: 24, fontWeight: 700 }}>🧠 Research Brain</h1>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div>
+          <h1 style={{ fontSize: 24, fontWeight: 700 }}>🧠 Research Brain</h1>
+          <p
+            style={{
+              fontSize: 13,
+              color: "var(--text-secondary)",
+              marginTop: 4,
+            }}
+          >
+            Capture research tabs like OneTab & turn them into structured daily
+            sessions
+          </p>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button
+            className="btn-primary"
+            onClick={handleOpenEndMyDay}
+            style={{
+              padding: "9px 18px",
+              fontSize: 14,
+              fontWeight: 600,
+              background: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)",
+              color: "white",
+              boxShadow: "0 2px 10px rgba(245, 158, 11, 0.25)",
+            }}
+          >
+            🌅 End My Day
+          </button>
           <button
             className="btn-primary"
             onClick={() => handleCapture(true)}
             disabled={isCapturing}
-            style={{ padding: "8px 16px", fontSize: 14, fontWeight: 600 }}
+            style={{ padding: "9px 16px", fontSize: 13, fontWeight: 600 }}
           >
-            {isCapturing ? "Capturing..." : "📥 Capture & Close Tabs"}
+            {isCapturing ? "Capturing..." : "📥 Capture & Close"}
           </button>
           <button
             className="btn-ghost"
             onClick={() => handleCapture(false)}
             disabled={isCapturing}
-            style={{ fontSize: 12 }}
+            style={{ fontSize: 12, padding: "8px 12px" }}
           >
             Capture Only
           </button>
         </div>
       </header>
 
-      {/* Capture result feedback */}
+      {/* Confirmation Banner */}
+      {saveConfirmation && (
+        <div
+          style={{
+            padding: "12px 16px",
+            borderRadius: "var(--radius)",
+            background: "rgba(34, 197, 94, 0.12)",
+            color: "#22c55e",
+            fontSize: 14,
+            fontWeight: 500,
+            marginBottom: 24,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            border: "1px solid rgba(34, 197, 94, 0.3)",
+          }}
+        >
+          <span>{saveConfirmation}</span>
+          <button
+            onClick={() => setSaveConfirmation(null)}
+            style={{
+              background: "none",
+              border: "none",
+              color: "inherit",
+              cursor: "pointer",
+              fontSize: 18,
+              padding: 0,
+            }}
+          >
+            ×
+          </button>
+        </div>
+      )}
+
+      {/* Capture Result feedback */}
       {captureResult && (
         <div
           style={{
@@ -270,8 +411,66 @@ export function App() {
         </div>
       )}
 
+      {/* ── End My Day Callout Banner (when tabs are captured) ── */}
+      {totalCapturedTabsCount > 0 && (
+        <div
+          style={{
+            background:
+              "linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(99, 102, 241, 0.08) 100%)",
+            border: "1px solid rgba(245, 158, 11, 0.3)",
+            borderRadius: "var(--radius)",
+            padding: "14px 20px",
+            marginBottom: 32,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <div>
+            <div
+              style={{
+                fontSize: 14,
+                fontWeight: 600,
+                color: "#fbbf24",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              <span>🌅</span> Ready to structure your day's research?
+            </div>
+            <div
+              style={{
+                fontSize: 13,
+                color: "var(--text-secondary)",
+                marginTop: 2,
+              }}
+            >
+              You have {totalCapturedTabsCount} captured tab(s) waiting. "End My
+              Day" synthesizes topics, key learnings, and questions into a
+              permanent session notebook.
+            </div>
+          </div>
+          <button
+            className="btn-primary"
+            onClick={handleOpenEndMyDay}
+            style={{
+              padding: "8px 16px",
+              fontSize: 13,
+              fontWeight: 600,
+              background: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)",
+              color: "white",
+              flexShrink: 0,
+              marginLeft: 16,
+            }}
+          >
+            Review & Save Session
+          </button>
+        </div>
+      )}
+
       {/* ── Tab Groups (OneTab-style lists) ── */}
-      <section style={{ marginBottom: 40 }}>
+      <section style={{ marginBottom: 44 }}>
         <h2 style={sectionHeadingStyle}>
           Saved Tab Groups
           <span style={{ marginLeft: 8, fontWeight: 400 }}>
@@ -283,7 +482,7 @@ export function App() {
           <div style={emptyStateStyle}>
             <p style={{ fontSize: 15, marginBottom: 4 }}>No captured tabs yet</p>
             <p style={{ fontSize: 13 }}>
-              Click "Capture & Close Tabs" to save your open tabs
+              Click "Capture & Close Tabs" to save your open tabs in one click
             </p>
           </div>
         ) : (
@@ -309,7 +508,7 @@ export function App() {
                       justifyContent: "space-between",
                       cursor: "pointer",
                     }}
-                    onClick={() => toggleExpand(group.id)}
+                    onClick={() => toggleExpandGroup(group.id)}
                   >
                     <div style={{ flex: 1 }}>
                       {editingGroupId === group.id ? (
@@ -414,9 +613,7 @@ export function App() {
                       </button>
                       <button
                         className="btn-ghost"
-                        onClick={() =>
-                          handleRestoreAll(group.id, false)
-                        }
+                        onClick={() => handleRestoreAll(group.id, false)}
                         style={{ padding: "4px 10px", fontSize: 11 }}
                         title="Open all tabs but keep the group saved"
                       >
@@ -475,7 +672,7 @@ export function App() {
                         >
                           {/* Favicon */}
                           <img
-                            src={getFaviconUrl(tab)}
+                            src={getFaviconUrl(tab.url, tab.favIconUrl)}
                             alt=""
                             style={{
                               width: 16,
@@ -569,7 +766,7 @@ export function App() {
         )}
       </section>
 
-      {/* ── Sessions ── */}
+      {/* ── Research Sessions (Feature 3: End My Day) ── */}
       <section style={{ marginBottom: 32 }}>
         <div
           style={{
@@ -580,9 +777,9 @@ export function App() {
           }}
         >
           <h2 style={sectionHeadingStyle}>
-            Active Sessions
+            Saved Research Sessions
             <span style={{ marginLeft: 8, fontWeight: 400 }}>
-              ({activeSessions.length})
+              ({sessions.length})
             </span>
           </h2>
           <div style={{ display: "flex", gap: 8 }}>
@@ -591,184 +788,485 @@ export function App() {
               onClick={handleNewSession}
               style={{ fontSize: 12 }}
             >
-              + New Session
+              + Blank Session
             </button>
-            {currentSessionId && (
-              <button
-                className="btn-danger"
-                onClick={handleEndDay}
-                style={{ fontSize: 12, padding: "4px 10px" }}
-              >
-                End My Day
-              </button>
-            )}
           </div>
         </div>
 
-        {activeSessions.length === 0 ? (
+        {sessions.length === 0 ? (
           <div style={emptyStateStyle}>
-            <p style={{ fontSize: 15, marginBottom: 4 }}>No active sessions</p>
+            <p style={{ fontSize: 15, marginBottom: 4 }}>
+              No saved research sessions yet
+            </p>
             <p style={{ fontSize: 13 }}>
-              Click "+ New Session" to start a research session
+              Capture tabs during your work and click "🌅 End My Day" to
+              generate structured session summaries.
             </p>
           </div>
         ) : (
-          <ul style={listStyle}>
-            {activeSessions.map((session) => (
-              <li
-                key={session.id}
-                style={{
-                  ...cardStyle,
-                  border:
-                    session.id === currentSessionId
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {sessions.map((session) => {
+              const isExpanded = expandedSessionId === session.id;
+              const tabCount =
+                session.tabCount ||
+                session.sources?.length ||
+                session.tabs?.length ||
+                0;
+
+              return (
+                <div
+                  key={session.id}
+                  style={{
+                    background: "var(--bg-secondary)",
+                    borderRadius: "var(--radius)",
+                    border: isExpanded
                       ? "1px solid var(--accent)"
                       : "1px solid var(--border)",
-                }}
-              >
-                <div style={{ flex: 1 }}>
-                  {editingId === session.id ? (
-                    <form
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        handleRenameSession(session.id);
+                    overflow: "hidden",
+                    transition: "border-color 150ms ease",
+                  }}
+                >
+                  {/* Session Card Header */}
+                  <div
+                    style={{
+                      padding: "14px 18px",
+                      display: "flex",
+                      alignItems: "flex-start",
+                      justifyContent: "space-between",
+                      gap: 16,
+                      cursor: "pointer",
+                    }}
+                    onClick={() => toggleExpandSession(session.id)}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      {editingId === session.id ? (
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            handleRenameSession(session.id);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          style={{ display: "flex", gap: 8 }}
+                        >
+                          <input
+                            type="text"
+                            value={editTitle}
+                            onChange={(e) => setEditTitle(e.target.value)}
+                            autoFocus
+                            style={{
+                              flex: 1,
+                              padding: "4px 8px",
+                              fontSize: 13,
+                            }}
+                          />
+                          <button
+                            className="btn-primary"
+                            type="submit"
+                            style={{ padding: "4px 10px", fontSize: 12 }}
+                          >
+                            Save
+                          </button>
+                          <button
+                            className="btn-ghost"
+                            type="button"
+                            onClick={() => setEditingId(null)}
+                            style={{ padding: "4px 10px", fontSize: 12 }}
+                          >
+                            Cancel
+                          </button>
+                        </form>
+                      ) : (
+                        <>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 10,
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            <span
+                              style={{
+                                fontSize: 12,
+                                transform: isExpanded
+                                  ? "rotate(90deg)"
+                                  : "rotate(0deg)",
+                                transition: "transform 150ms",
+                                display: "inline-block",
+                              }}
+                            >
+                              ▶
+                            </span>
+                            <span
+                              style={{
+                                fontWeight: 600,
+                                fontSize: 15,
+                                color: "var(--text-primary)",
+                              }}
+                            >
+                              {session.title}
+                            </span>
+                            {tabCount > 0 && (
+                              <span
+                                style={{
+                                  background: "rgba(99, 102, 241, 0.2)",
+                                  color: "var(--accent-hover)",
+                                  padding: "2px 8px",
+                                  borderRadius: 10,
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                }}
+                              >
+                                {tabCount} tabs
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Topics pills */}
+                          {session.topics && session.topics.length > 0 && (
+                            <div
+                              style={{
+                                display: "flex",
+                                flexWrap: "wrap",
+                                gap: 6,
+                                marginTop: 8,
+                                marginLeft: 22,
+                              }}
+                            >
+                              {session.topics.map((t, idx) => (
+                                <span
+                                  key={idx}
+                                  style={{
+                                    background: "var(--bg-tertiary)",
+                                    border: "1px solid var(--border)",
+                                    color: "var(--text-secondary)",
+                                    fontSize: 11,
+                                    padding: "2px 8px",
+                                    borderRadius: 12,
+                                  }}
+                                >
+                                  {t}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          <div
+                            style={{
+                              fontSize: 12,
+                              color: "var(--text-muted)",
+                              marginTop: 6,
+                              marginLeft: 22,
+                            }}
+                          >
+                            Created {formatTime(session.createdAt)}
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Card Actions */}
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        flexShrink: 0,
                       }}
-                      style={{ display: "flex", gap: 8 }}
+                      onClick={(e) => e.stopPropagation()}
                     >
-                      <input
-                        type="text"
-                        value={editTitle}
-                        onChange={(e) => setEditTitle(e.target.value)}
-                        autoFocus
-                        style={{ flex: 1, padding: "4px 8px", fontSize: 13 }}
-                      />
                       <button
-                        className="btn-primary"
-                        type="submit"
-                        style={{ padding: "4px 10px", fontSize: 12 }}
+                        className="btn-ghost"
+                        onClick={() => toggleExpandSession(session.id)}
+                        style={{ padding: "4px 10px", fontSize: 11 }}
                       >
-                        Save
+                        {isExpanded ? "Hide Notebook ▲" : "View Notebook ▼"}
                       </button>
                       <button
                         className="btn-ghost"
-                        type="button"
-                        onClick={() => setEditingId(null)}
-                        style={{ padding: "4px 10px", fontSize: 12 }}
+                        onClick={() => {
+                          setEditingId(session.id);
+                          setEditTitle(session.title);
+                        }}
+                        style={{ padding: "4px 8px", fontSize: 11 }}
                       >
-                        Cancel
+                        Rename
                       </button>
-                    </form>
-                  ) : (
-                    <>
-                      <div style={{ fontWeight: 500, fontSize: 14 }}>
-                        {session.title}
-                      </div>
-                      <div
+                      <button
+                        className="btn-ghost"
+                        onClick={() => handleDeleteSession(session.id)}
                         style={{
-                          fontSize: 12,
-                          color: "var(--text-muted)",
-                          marginTop: 2,
+                          padding: "4px 8px",
+                          fontSize: 11,
+                          color: "var(--danger)",
                         }}
                       >
-                        Started {formatTime(session.createdAt)}
-                      </div>
-                    </>
-                  )}
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  {session.id === currentSessionId && (
-                    <span
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* ── Expanded Session Notebook (Feature 3 & 4) ── */}
+                  {isExpanded && (
+                    <div
                       style={{
-                        fontSize: 11,
-                        color: "var(--accent)",
-                        fontWeight: 600,
-                        textTransform: "uppercase",
+                        borderTop: "1px solid var(--border)",
+                        background: "var(--bg-primary)",
+                        padding: "20px 24px",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 16,
                       }}
                     >
-                      Active
-                    </span>
+                      {/* Summary */}
+                      {session.summary && (
+                        <div>
+                          <div
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 600,
+                              textTransform: "uppercase",
+                              letterSpacing: "0.5px",
+                              color: "var(--text-secondary)",
+                              marginBottom: 6,
+                            }}
+                          >
+                            Summary
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 13,
+                              lineHeight: 1.6,
+                              color: "var(--text-primary)",
+                              whiteSpace: "pre-line",
+                              background: "var(--bg-secondary)",
+                              padding: "12px 16px",
+                              borderRadius: "var(--radius)",
+                              border: "1px solid var(--border)",
+                            }}
+                          >
+                            {session.summary}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Key Learnings */}
+                      {session.keyLearnings &&
+                        session.keyLearnings.length > 0 && (
+                          <div>
+                            <div
+                              style={{
+                                fontSize: 12,
+                                fontWeight: 600,
+                                textTransform: "uppercase",
+                                letterSpacing: "0.5px",
+                                color: "var(--text-secondary)",
+                                marginBottom: 6,
+                              }}
+                            >
+                              Key Learnings
+                            </div>
+                            <div
+                              style={{
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: 6,
+                              }}
+                            >
+                              {session.keyLearnings.map((learning, idx) => (
+                                <div
+                                  key={idx}
+                                  style={{
+                                    display: "flex",
+                                    gap: 10,
+                                    fontSize: 13,
+                                    lineHeight: 1.5,
+                                    background: "var(--bg-secondary)",
+                                    padding: "8px 12px",
+                                    borderRadius: "var(--radius)",
+                                    border: "1px solid var(--border)",
+                                  }}
+                                >
+                                  <span style={{ color: "var(--accent)" }}>
+                                    •
+                                  </span>
+                                  <span>{learning}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                      {/* Open Questions */}
+                      {session.openQuestions &&
+                        session.openQuestions.length > 0 && (
+                          <div>
+                            <div
+                              style={{
+                                fontSize: 12,
+                                fontWeight: 600,
+                                textTransform: "uppercase",
+                                letterSpacing: "0.5px",
+                                color: "var(--text-secondary)",
+                                marginBottom: 6,
+                              }}
+                            >
+                              Open Questions
+                            </div>
+                            <div
+                              style={{
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: 6,
+                              }}
+                            >
+                              {session.openQuestions.map((q, idx) => (
+                                <div
+                                  key={idx}
+                                  style={{
+                                    display: "flex",
+                                    gap: 10,
+                                    fontSize: 13,
+                                    lineHeight: 1.5,
+                                    background: "var(--bg-secondary)",
+                                    padding: "8px 12px",
+                                    borderRadius: "var(--radius)",
+                                    border: "1px solid var(--border)",
+                                  }}
+                                >
+                                  <span
+                                    style={{
+                                      color: "#f59e0b",
+                                      fontWeight: 700,
+                                    }}
+                                  >
+                                    ?
+                                  </span>
+                                  <span>{q}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                      {/* Sources List */}
+                      {session.sources && session.sources.length > 0 && (
+                        <div>
+                          <div
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 600,
+                              textTransform: "uppercase",
+                              letterSpacing: "0.5px",
+                              color: "var(--text-secondary)",
+                              marginBottom: 6,
+                            }}
+                          >
+                            Captured Sources ({session.sources.length})
+                          </div>
+                          <div
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: 6,
+                              maxHeight: 240,
+                              overflowY: "auto",
+                              background: "var(--bg-secondary)",
+                              padding: 8,
+                              borderRadius: "var(--radius)",
+                              border: "1px solid var(--border)",
+                            }}
+                          >
+                            {session.sources.map((source, idx) => (
+                              <div
+                                key={idx}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 10,
+                                  padding: "6px 8px",
+                                  borderRadius: 4,
+                                }}
+                              >
+                                <img
+                                  src={getFaviconUrl(
+                                    source.url,
+                                    source.favIconUrl,
+                                  )}
+                                  alt=""
+                                  style={{
+                                    width: 16,
+                                    height: 16,
+                                    borderRadius: 2,
+                                    flexShrink: 0,
+                                  }}
+                                  onError={(e) => {
+                                    (
+                                      e.target as HTMLImageElement
+                                    ).style.display = "none";
+                                  }}
+                                />
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div
+                                    style={{
+                                      fontSize: 13,
+                                      fontWeight: 500,
+                                      whiteSpace: "nowrap",
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                      color: "var(--accent-hover)",
+                                      cursor: "pointer",
+                                    }}
+                                    onClick={() => openTab(source.url)}
+                                    title={source.title}
+                                  >
+                                    {cleanTitle(source.title) || source.title}
+                                  </div>
+                                  <div
+                                    style={{
+                                      fontSize: 11,
+                                      color: "var(--text-muted)",
+                                      whiteSpace: "nowrap",
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                    }}
+                                  >
+                                    {source.url}
+                                  </div>
+                                </div>
+                                <button
+                                  className="btn-ghost"
+                                  onClick={() => openTab(source.url)}
+                                  style={{
+                                    padding: "2px 8px",
+                                    fontSize: 11,
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  Open Tab
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   )}
-                  <button
-                    className="btn-ghost"
-                    onClick={() => {
-                      setEditingId(session.id);
-                      setEditTitle(session.title);
-                    }}
-                    style={{ padding: "4px 8px", fontSize: 11 }}
-                  >
-                    Rename
-                  </button>
-                  <button
-                    className="btn-ghost"
-                    onClick={() => handleDeleteSession(session.id)}
-                    style={{
-                      padding: "4px 8px",
-                      fontSize: 11,
-                      color: "var(--danger)",
-                    }}
-                  >
-                    Delete
-                  </button>
                 </div>
-              </li>
-            ))}
-          </ul>
+              );
+            })}
+          </div>
         )}
       </section>
 
-      {/* Past Sessions */}
-      {endedSessions.length > 0 && (
-        <section>
-          <h2 style={sectionHeadingStyle}>
-            Past Sessions
-            <span style={{ marginLeft: 8, fontWeight: 400 }}>
-              ({endedSessions.length})
-            </span>
-          </h2>
-          <ul style={listStyle}>
-            {endedSessions.map((session) => (
-              <li
-                key={session.id}
-                style={{ ...cardStyle, opacity: 0.7 }}
-              >
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 500, fontSize: 14 }}>
-                    {session.title}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: "var(--text-muted)",
-                      marginTop: 2,
-                    }}
-                  >
-                    {formatTime(session.createdAt)}
-                    {session.endedAt &&
-                      ` — ended ${formatTime(session.endedAt)}`}
-                  </div>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span
-                    style={{ fontSize: 11, color: "var(--text-muted)" }}
-                  >
-                    Ended
-                  </span>
-                  <button
-                    className="btn-ghost"
-                    onClick={() => handleDeleteSession(session.id)}
-                    style={{
-                      padding: "4px 8px",
-                      fontSize: 11,
-                      color: "var(--danger)",
-                    }}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      {/* End My Day Modal */}
+      <EndMyDayModal
+        isOpen={isEndMyDayOpen}
+        onClose={() => setIsEndMyDayOpen(false)}
+        tabs={endMyDayTabs}
+        hasTabGroups={tabGroups.length > 0}
+        onSave={handleSaveEndMyDaySession}
+      />
 
       <footer
         style={{
@@ -778,7 +1276,7 @@ export function App() {
           color: "var(--text-muted)",
         }}
       >
-        Research Brain v0.1.0
+        Research Brain v0.2.0
       </footer>
     </div>
   );
@@ -798,21 +1296,4 @@ const emptyStateStyle: React.CSSProperties = {
   padding: 32,
   textAlign: "center",
   color: "var(--text-muted)",
-};
-
-const listStyle: React.CSSProperties = {
-  listStyle: "none",
-  display: "flex",
-  flexDirection: "column",
-  gap: 8,
-};
-
-const cardStyle: React.CSSProperties = {
-  background: "var(--bg-secondary)",
-  borderRadius: "var(--radius)",
-  padding: "12px 16px",
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  border: "1px solid var(--border)",
 };

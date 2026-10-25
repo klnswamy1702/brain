@@ -96,10 +96,11 @@ Recent Capture
 
 **Verification:**
 
-- [ ] Open several tabs → click Capture Research → all tabs appear
-- [ ] Close/reopen extension → captured data persists
-- [ ] Re-capture → no duplicates
-- [ ] Build passes
+- [x] Open several tabs → click Capture Research → all tabs appear
+- [x] Close/reopen extension → captured data persists
+- [x] Re-capture → no duplicates
+- [x] Build passes
+
 
 ---
 

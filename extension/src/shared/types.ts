@@ -26,14 +26,42 @@ export interface TabGroup {
   closedOnCapture: boolean;
 }
 
-/** A single research session record. */
+/** A source/tab reference in a saved Research Session. */
+export interface ResearchSource {
+  title: string;
+  url: string;
+  favIconUrl?: string;
+  domain?: string;
+  capturedAt?: number;
+}
+
+/** A single research session record (Feature 3: End My Day). */
 export interface Session {
   id: string;
   title: string;
   createdAt: number;
   endedAt?: number;
-  tabs?: TabInfo[];
+  tabCount?: number;
+  sources?: ResearchSource[];
   summary?: string;
+  topics?: string[];
+  keyLearnings?: string[];
+  openQuestions?: string[];
+  /** Legacy tabs field */
+  tabs?: TabInfo[];
+}
+
+export type ResearchSession = Session;
+
+/** Editable draft produced by the deterministic session generator. */
+export interface SessionDraft {
+  title: string;
+  tabCount: number;
+  sources: ResearchSource[];
+  topics: string[];
+  summary: string;
+  keyLearnings: string[];
+  openQuestions: string[];
 }
 
 /** Shape of the data persisted in chrome.storage.local. */

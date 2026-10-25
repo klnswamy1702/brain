@@ -39,9 +39,8 @@ export function Popup() {
   };
 
   const handleEndDay = () => {
-    chrome.runtime.sendMessage({ action: "END_DAY" }, () => {
-      refreshStatus();
-    });
+    openAppPage("#end-my-day");
+    window.close();
   };
 
   return (
@@ -50,7 +49,7 @@ export function Popup() {
         <h1 style={{ fontSize: 18, fontWeight: 600 }}>🧠 Research Brain</h1>
         <button
           className="btn-ghost"
-          onClick={openAppPage}
+          onClick={() => openAppPage()}
           style={{ fontSize: 12, padding: "4px 10px" }}
         >
           Open Full App
@@ -118,13 +117,24 @@ export function Popup() {
         </div>
       </section>
 
-      {/* End My Day */}
-      <button className="btn-danger" onClick={handleEndDay} style={{ width: "100%" }}>
-        End My Day
+      {/* End My Day (Feature 3) */}
+      <button
+        className="btn-primary"
+        onClick={handleEndDay}
+        style={{
+          width: "100%",
+          padding: "10px 16px",
+          fontWeight: 600,
+          background: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)",
+          color: "white",
+          boxShadow: "0 2px 8px rgba(245, 158, 11, 0.3)",
+        }}
+      >
+        🌅 End My Day (Review & Save)
       </button>
 
       <footer style={{ textAlign: "center", fontSize: 11, color: "var(--text-muted)" }}>
-        Research Brain v0.1.0
+        Research Brain v0.2.0
       </footer>
     </div>
   );

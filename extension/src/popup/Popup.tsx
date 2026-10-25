@@ -117,20 +117,36 @@ export function Popup() {
         </div>
       </section>
 
-      {/* End My Day (Feature 3) */}
+      {/* Auto-Cluster by Topic */}
       <button
         className="btn-primary"
-        onClick={handleEndDay}
+        onClick={() => {
+          openAppPage("#auto-cluster");
+          window.close();
+        }}
         style={{
           width: "100%",
           padding: "10px 16px",
           fontWeight: 600,
-          background: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)",
+          background: "linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%)",
           color: "white",
-          boxShadow: "0 2px 8px rgba(245, 158, 11, 0.3)",
+          boxShadow: "0 2px 8px rgba(139, 92, 246, 0.3)",
         }}
       >
-        🌅 End My Day (Review & Save)
+        ✨ Auto-Cluster Tabs by Topic
+      </button>
+
+      {/* End My Day (Single Combined Session) */}
+      <button
+        className="btn-ghost"
+        onClick={handleEndDay}
+        style={{
+          width: "100%",
+          padding: "8px 16px",
+          fontSize: 13,
+        }}
+      >
+        🌅 End My Day (Single Session)
       </button>
 
       <footer style={{ textAlign: "center", fontSize: 11, color: "var(--text-muted)" }}>

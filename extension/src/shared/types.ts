@@ -85,6 +85,15 @@ export interface SessionDraft {
   stoppingPoint: string;
 }
 
+/** A cluster of tabs grouped together by topic (Auto-Clustering). */
+export interface TopicCluster {
+  id: string;
+  categoryName: string;
+  categoryIcon: string;
+  tabs: (CapturedTab | TabInfo)[];
+  draft: SessionDraft;
+}
+
 /** Shape of the data persisted in chrome.storage.local. */
 export interface StorageSchema {
   sessions: Session[];

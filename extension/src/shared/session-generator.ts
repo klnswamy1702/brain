@@ -5,7 +5,9 @@ import type {
   SessionDraft,
   ResearchState,
   Session,
+  TopicCluster,
 } from "./types";
+
 
 /** Comprehensive list of common stop words to ignore when extracting topics. */
 const STOP_WORDS = new Set([
@@ -533,4 +535,221 @@ export function generateResearchSessionDraft(
     objective,
     stoppingPoint,
   };
+}
+
+/** Predefined taxonomy categories for high-signal topic clustering. */
+interface TaxonomyCategory {
+  id: string;
+  name: string;
+  icon: string;
+  defaultTitle: string;
+  keywords: string[];
+  domains: string[];
+}
+
+export const TAXONOMIES: TaxonomyCategory[] = [
+  {
+    id: "devops",
+    name: "DevOps & Cloud Infrastructure",
+    icon: "🛠️",
+    defaultTitle: "DevOps & Cloud Infrastructure",
+    keywords: [
+      "devops", "kubernetes", "k8s", "docker", "container", "containers", "aws", "amazon web services",
+      "cloud", "ci/cd", "cicd", "pipeline", "jenkins", "terraform", "ansible", "linux", "helm",
+      "infrastructure", "deployment", "deployments", "monitoring", "prometheus", "grafana",
+      "microservices", "cluster", "clusters", "ingress", "pod", "pods", "node", "nodes", "serverless",
+      "ec2", "s3", "eks", "iam", "sysadmin", "sre", "gitlab", "github actions", "observability",
+      "production-grade", "scheduling", "kubeadm"
+    ],
+    domains: [
+      "kubernetes.io", "aws.amazon.com", "docker.com", "terraform.io", "hashicorp.com",
+      "devops.com", "redhat.com", "digitalocean.com", "jenkins.io", "helm.sh"
+    ],
+  },
+  {
+    id: "finance",
+    name: "Silver ETFs, Stocks & Markets",
+    icon: "📈",
+    defaultTitle: "Silver ETFs & Financial Markets",
+    keywords: [
+      "silver", "gold", "etf", "etfs", "stock", "stocks", "share", "shares", "equity", "market", "markets",
+      "investing", "invest", "investment", "investments", "finance", "financial", "trading", "trade", "trader",
+      "nasdaq", "nyse", "portfolio", "bullion", "commodity", "commodities", "slv", "silver trust",
+      "dividend", "dividends", "mutual fund", "crypto", "bitcoin", "sec", "earnings", "valuation",
+      "sp500", "s&p", "dow jones", "bonds", "yield", "wall street", "index fund", "futures", "options",
+      "ishares", "vanguard", "precious metals", "kitco", "bullionvault"
+    ],
+    domains: [
+      "investing.com", "finance.yahoo.com", "etf.com", "bloomberg.com", "marketwatch.com", "fool.com",
+      "seekingalpha.com", "cnbc.com", "wsj.com", "reuters.com", "moneycontrol.com", "tradingview.com",
+      "zerodha.com", "nasdaq.com", "investopedia.com", "morningstar.com", "kitco.com"
+    ],
+  },
+  {
+    id: "sports",
+    name: "Cricket & Sports Updates",
+    icon: "🏏",
+    defaultTitle: "Cricket & Sports Updates",
+    keywords: [
+      "cricket", "match", "score", "scores", "ipl", "bcci", "icc", "test match", "odi", "t20",
+      "wicket", "wickets", "batsman", "bowler", "innings", "cup", "tournament", "sports", "football",
+      "soccer", "premier league", "nba", "tennis", "olympics", "stadium", "championship", "live score",
+      "athletics", "fifa", "cricketer", "espn", "cricinfo", "cricbuzz", "f1", "formula 1", "runs", "over"
+    ],
+    domains: [
+      "espncricinfo.com", "cricbuzz.com", "espn.com", "skysports.com", "sportskeeda.com", "iplt20.com",
+      "icc-cricket.com", "goal.com", "premierleague.com", "cricwaves.com", "cricket.com"
+    ],
+  },
+  {
+    id: "ai_ml",
+    name: "AI & Machine Learning",
+    icon: "🤖",
+    defaultTitle: "AI & Machine Learning Research",
+    keywords: [
+      "ai", "artificial intelligence", "machine learning", "deep learning", "llm", "gpt", "gemini",
+      "claude", "openai", "anthropic", "neural network", "prompt", "embeddings", "rag", "huggingface",
+      "transformers", "agent", "nlp", "pytorch", "tensorflow", "model", "models"
+    ],
+    domains: [
+      "openai.com", "anthropic.com", "huggingface.co", "ai.google.dev", "paperswithcode.com", "arxiv.org"
+    ],
+  },
+  {
+    id: "web_dev",
+    name: "Web & Software Engineering",
+    icon: "💻",
+    defaultTitle: "Web & Software Engineering",
+    keywords: [
+      "react", "reactjs", "nextjs", "next.js", "vite", "vitejs", "typescript", "javascript", "python",
+      "golang", "rust", "css", "html", "tailwind", "graphql", "rest api", "database", "postgresql",
+      "postgres", "mongodb", "redis", "node", "nodejs", "frontend", "fullstack", "npm", "w3schools"
+    ],
+    domains: [
+      "react.dev", "nextjs.org", "vite.dev", "vitejs.dev", "developer.mozilla.org", "npmjs.com",
+      "pypi.org", "stackoverflow.com", "w3schools.com"
+    ],
+  },
+];
+
+/**
+ * Automatically cluster a set of tabs into topic-based groups.
+ * Enables turning 3 DevOps tabs, 4 Silver/Stocks tabs, and 2 Cricket tabs
+ * into 3 separate focused research sessions in one click.
+ */
+export function clusterTabsByTopic(
+  tabs: (CapturedTab | TabInfo)[],
+): TopicCluster[] {
+  if (tabs.length === 0) return [];
+
+  const assigned = new Map<string, (CapturedTab | TabInfo)[]>();
+  const unassigned: (CapturedTab | TabInfo)[] = [];
+
+  for (const tab of tabs) {
+    const title = (tab.title || "").toLowerCase();
+    const url = (tab.url || "").toLowerCase();
+    const domain = getCleanDomain(tab.url || "").toLowerCase();
+
+    let bestTaxonomy: TaxonomyCategory | null = null;
+    let highestScore = 0;
+
+    for (const tax of TAXONOMIES) {
+      let score = 0;
+
+      // Check domain match
+      for (const d of tax.domains) {
+        if (domain.includes(d) || url.includes(d)) {
+          score += 15;
+        }
+      }
+
+      // Check keywords in title & URL
+      for (const kw of tax.keywords) {
+        const regex = new RegExp(`\\b${kw.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&")}\\b`, "i");
+        if (regex.test(title)) {
+          score += 7;
+        } else if (title.includes(kw)) {
+          score += 4;
+        }
+        if (url.includes(kw)) {
+          score += 3;
+        }
+      }
+
+      if (score > highestScore) {
+        highestScore = score;
+        bestTaxonomy = tax;
+      }
+    }
+
+    if (bestTaxonomy && highestScore >= 3) {
+      const list = assigned.get(bestTaxonomy.id) || [];
+      list.push(tab);
+      assigned.set(bestTaxonomy.id, list);
+    } else {
+      unassigned.push(tab);
+    }
+  }
+
+  const clusters: TopicCluster[] = [];
+
+  // Create clusters for each matched taxonomy
+  for (const tax of TAXONOMIES) {
+    const clusterTabs = assigned.get(tax.id);
+    if (clusterTabs && clusterTabs.length > 0) {
+      const draft = generateResearchSessionDraft(clusterTabs);
+      draft.title = `${tax.defaultTitle}`;
+      clusters.push({
+        id: tax.id,
+        categoryName: tax.name,
+        categoryIcon: tax.icon,
+        tabs: clusterTabs,
+        draft,
+      });
+    }
+  }
+
+  // Handle any unassigned tabs
+  if (unassigned.length > 0) {
+    // If multiple unassigned tabs share a domain, group them together
+    const domainMap = new Map<string, (CapturedTab | TabInfo)[]>();
+    for (const tab of unassigned) {
+      const d = getCleanDomain(tab.url) || "General";
+      const list = domainMap.get(d) || [];
+      list.push(tab);
+      domainMap.set(d, list);
+    }
+
+    // If single domain has multiple tabs, create a domain-focused cluster
+    const leftovers: (CapturedTab | TabInfo)[] = [];
+    for (const [dom, domTabs] of domainMap.entries()) {
+      if (domTabs.length >= 2 && dom !== "General") {
+        const draft = generateResearchSessionDraft(domTabs);
+        draft.title = `Research on ${dom}`;
+        clusters.push({
+          id: `domain-${dom}`,
+          categoryName: `${dom} Research`,
+          categoryIcon: "🌐",
+          tabs: domTabs,
+          draft,
+        });
+      } else {
+        leftovers.push(...domTabs);
+      }
+    }
+
+    if (leftovers.length > 0) {
+      const draft = generateResearchSessionDraft(leftovers);
+      draft.title = `General & Exploratory Research`;
+      clusters.push({
+        id: "general",
+        categoryName: "General Research",
+        categoryIcon: "🌐",
+        tabs: leftovers,
+        draft,
+      });
+    }
+  }
+
+  return clusters;
 }

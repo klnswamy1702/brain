@@ -14,6 +14,7 @@ interface EndMyDayModalProps {
   tabs: (CapturedTab | TabInfo)[];
   hasTabGroups: boolean;
   onSave: (session: Session, clearGroups: boolean) => Promise<void>;
+  onSwitchToAutoCluster?: () => void;
 }
 
 export function EndMyDayModal({
@@ -22,6 +23,7 @@ export function EndMyDayModal({
   tabs,
   hasTabGroups,
   onSave,
+  onSwitchToAutoCluster,
 }: EndMyDayModalProps) {
   const [draft, setDraft] = useState<SessionDraft | null>(null);
   const [title, setTitle] = useState("");
@@ -244,19 +246,37 @@ export function EndMyDayModal({
             </p>
           </div>
 
-          <button
-            onClick={onClose}
-            className="btn-ghost"
-            style={{
-              padding: "4px 10px",
-              fontSize: 18,
-              lineHeight: 1,
-              borderRadius: "50%",
-            }}
-            title="Cancel and close"
-          >
-            ×
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {onSwitchToAutoCluster && (
+              <button
+                className="btn-ghost"
+                type="button"
+                onClick={onSwitchToAutoCluster}
+                style={{
+                  fontSize: 12,
+                  padding: "4px 10px",
+                  borderColor: "rgba(139, 92, 246, 0.4)",
+                  color: "#c084fc",
+                }}
+                title="Group tabs by topics into separate sessions"
+              >
+                ✨ Auto-Cluster Topics
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="btn-ghost"
+              style={{
+                padding: "4px 10px",
+                fontSize: 18,
+                lineHeight: 1,
+                borderRadius: "50%",
+              }}
+              title="Cancel and close"
+            >
+              ×
+            </button>
+          </div>
         </header>
 
         {/* Scrollable Body */}

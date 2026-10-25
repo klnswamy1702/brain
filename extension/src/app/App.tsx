@@ -10,6 +10,7 @@ import type {
 import { storage } from "../shared/storage";
 import { captureCurrentTabs, openTab } from "../shared/tabs";
 import { EndMyDayModal } from "./EndMyDayModal";
+import { AutoClusterModal } from "./AutoClusterModal";
 import { SessionDetail } from "./SessionDetail";
 import { cleanTitle } from "../shared/session-generator";
 
@@ -43,6 +44,10 @@ export function App() {
   const [endMyDayTabs, setEndMyDayTabs] = useState<(CapturedTab | TabInfo)[]>([]);
   const [saveConfirmation, setSaveConfirmation] = useState<string | null>(null);
 
+  // Auto-Cluster Modal state (Topic Auto-Clustering)
+  const [isAutoClusterOpen, setIsAutoClusterOpen] = useState(false);
+  const [autoClusterTabs, setAutoClusterTabs] = useState<(CapturedTab | TabInfo)[]>([]);
+
   const loadData = useCallback(async () => {
     const allSessions = await storage.get("sessions");
     const activeId = await storage.get("currentSessionId");
@@ -56,12 +61,19 @@ export function App() {
     loadData();
   }, [loadData]);
 
-  // Handle hash routes: #end-my-day, #session/:id
+  // Handle hash routes: #end-my-day, #auto-cluster, #session/:id
   useEffect(() => {
     const handleHash = () => {
       const hash = window.location.hash;
       if (hash === "#end-my-day") {
         handleOpenEndMyDay();
+        try {
+          history.replaceState(null, "", window.location.pathname);
+        } catch {
+          // ignore
+        }
+      } else if (hash === "#auto-cluster") {
+        handleOpenAutoCluster();
         try {
           history.replaceState(null, "", window.location.pathname);
         } catch {
@@ -98,7 +110,55 @@ export function App() {
     window.location.hash = "";
   };
 
-  // ── End My Day (Feature 3) ────────────────────────────────
+  // ── Auto-Cluster by Topic (Separate Sessions) ─────────────
+
+  const handleOpenAutoCluster = async () => {
+    const groupTabs: CapturedTab[] = [];
+    for (const group of tabGroups) {
+      groupTabs.push(...group.tabs);
+    }
+
+    let currentTabs: CapturedTab[] = [];
+    try {
+      currentTabs = await captureCurrentTabs();
+    } catch {
+      // not in extension context or failed
+    }
+
+    const seenUrls = new Set<string>();
+    const combinedTabs: CapturedTab[] = [];
+
+    for (const tab of [...groupTabs, ...currentTabs]) {
+      if (!seenUrls.has(tab.url)) {
+        seenUrls.add(tab.url);
+        combinedTabs.push(tab);
+      }
+    }
+
+    setAutoClusterTabs(combinedTabs);
+    setIsAutoClusterOpen(true);
+  };
+
+  const handleSaveAutoClusters = async (
+    newSessions: Session[],
+    clearGroups: boolean,
+  ) => {
+    const updated = [...newSessions, ...sessions];
+    await storage.set("sessions", updated);
+    setSessions(updated);
+
+    if (clearGroups) {
+      await storage.set("tabGroups", []);
+      setTabGroups([]);
+    }
+
+    const sessionTitles = newSessions.map((s) => s.title).join(", ");
+    setSaveConfirmation(
+      `✓ Created ${newSessions.length} separate topic sessions: ${sessionTitles}!`,
+    );
+  };
+
+  // ── End My Day (Single Session) ───────────────────────────
 
   const handleOpenEndMyDay = async () => {
     const groupTabs: CapturedTab[] = [];
@@ -146,6 +206,7 @@ export function App() {
     // Directly open the newly created notebook
     handleOpenSessionDetail(newSession.id);
   };
+
 
   const handleUpdateSession = async (updated: Session) => {
     const newSessions = sessions.map((s) => (s.id === updated.id ? updated : s));
@@ -371,10 +432,25 @@ export function App() {
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <button
             className="btn-primary"
+            onClick={handleOpenAutoCluster}
+            style={{
+              padding: "9px 16px",
+              fontSize: 13,
+              fontWeight: 600,
+              background: "linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%)",
+              color: "white",
+              boxShadow: "0 2px 10px rgba(139, 92, 246, 0.3)",
+            }}
+            title="Group tabs by topic and create separate sessions in one click"
+          >
+            ✨ Auto-Cluster by Topic
+          </button>
+          <button
+            className="btn-primary"
             onClick={handleOpenEndMyDay}
             style={{
-              padding: "9px 18px",
-              fontSize: 14,
+              padding: "9px 16px",
+              fontSize: 13,
               fontWeight: 600,
               background: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)",
               color: "white",
@@ -505,26 +581,38 @@ export function App() {
                 marginTop: 2,
               }}
             >
-              You have {totalCapturedTabsCount} captured tab(s) waiting. "End My
-              Day" synthesizes topics, key learnings, and questions into a
-              permanent session notebook.
+              You have {totalCapturedTabsCount} captured tab(s) waiting.
+              Auto-cluster tabs by topic into separate sessions or combine them into
+              one daily notebook.
             </div>
           </div>
-          <button
-            className="btn-primary"
-            onClick={handleOpenEndMyDay}
-            style={{
-              padding: "8px 16px",
-              fontSize: 13,
-              fontWeight: 600,
-              background: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)",
-              color: "white",
-              flexShrink: 0,
-              marginLeft: 16,
-            }}
-          >
-            Review & Save Session
-          </button>
+          <div style={{ display: "flex", gap: 8, flexShrink: 0, marginLeft: 16 }}>
+            <button
+              className="btn-primary"
+              onClick={handleOpenAutoCluster}
+              style={{
+                padding: "8px 14px",
+                fontSize: 12,
+                fontWeight: 600,
+                background: "linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%)",
+                color: "white",
+                boxShadow: "0 2px 8px rgba(139, 92, 246, 0.3)",
+              }}
+            >
+              ✨ Auto-Cluster by Topic
+            </button>
+            <button
+              className="btn-ghost"
+              onClick={handleOpenEndMyDay}
+              style={{
+                padding: "8px 12px",
+                fontSize: 12,
+                fontWeight: 600,
+              }}
+            >
+              🌅 Single Session
+            </button>
+          </div>
         </div>
       )}
 
@@ -1136,13 +1224,30 @@ export function App() {
         )}
       </section>
 
-      {/* End My Day Modal */}
+      {/* End My Day Modal (Single Session) */}
       <EndMyDayModal
         isOpen={isEndMyDayOpen}
         onClose={() => setIsEndMyDayOpen(false)}
         tabs={endMyDayTabs}
         hasTabGroups={tabGroups.length > 0}
         onSave={handleSaveEndMyDaySession}
+        onSwitchToAutoCluster={() => {
+          setIsEndMyDayOpen(false);
+          handleOpenAutoCluster();
+        }}
+      />
+
+      {/* Auto-Cluster Modal (Separate Topic Sessions) */}
+      <AutoClusterModal
+        isOpen={isAutoClusterOpen}
+        onClose={() => setIsAutoClusterOpen(false)}
+        tabs={autoClusterTabs}
+        hasTabGroups={tabGroups.length > 0}
+        onSaveClusters={handleSaveAutoClusters}
+        onSwitchToSingleSession={() => {
+          setIsAutoClusterOpen(false);
+          handleOpenEndMyDay();
+        }}
       />
 
       <footer

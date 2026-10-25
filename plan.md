@@ -159,10 +159,11 @@ Open Questions: ...
 
 **Verification:**
 
-- [ ] Capture research → End My Day → review → save
-- [ ] Session persists after closing/reopening extension
-- [ ] Cancel discards the session
-- [ ] Build passes
+- [x] Capture research → End My Day → review → save
+- [x] Session persists after closing/reopening extension
+- [x] Cancel discards the session
+- [x] Build passes
+
 
 ---
 

@@ -35,7 +35,21 @@ export interface ResearchSource {
   capturedAt?: number;
 }
 
-/** A single research session record (Feature 3: End My Day). */
+/** Structured research state (Feature 4: Session Detail & Research State). */
+export interface ResearchState {
+  /** What was being researched */
+  objective: string;
+  /** What was learned */
+  learnings: string[];
+  /** Key analytical observations & trade-offs */
+  insights: string[];
+  /** What remains unresolved / open questions */
+  unresolved: string[];
+  /** Where research stopped */
+  stoppingPoint: string;
+}
+
+/** A single research session record (Feature 3 & 4: Research Notebook). */
 export interface Session {
   id: string;
   title: string;
@@ -46,7 +60,11 @@ export interface Session {
   summary?: string;
   topics?: string[];
   keyLearnings?: string[];
+  insights?: string[];
   openQuestions?: string[];
+  objective?: string;
+  stoppingPoint?: string;
+  researchState?: ResearchState;
   /** Legacy tabs field */
   tabs?: TabInfo[];
 }
@@ -61,7 +79,10 @@ export interface SessionDraft {
   topics: string[];
   summary: string;
   keyLearnings: string[];
+  insights: string[];
   openQuestions: string[];
+  objective: string;
+  stoppingPoint: string;
 }
 
 /** Shape of the data persisted in chrome.storage.local. */

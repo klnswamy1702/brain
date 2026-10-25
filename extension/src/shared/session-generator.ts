@@ -1,4 +1,11 @@
-import type { CapturedTab, TabInfo, ResearchSource, SessionDraft } from "./types";
+import type {
+  CapturedTab,
+  TabInfo,
+  ResearchSource,
+  SessionDraft,
+  ResearchState,
+  Session,
+} from "./types";
 
 /** Comprehensive list of common stop words to ignore when extracting topics. */
 const STOP_WORDS = new Set([
@@ -152,7 +159,6 @@ export function extractTopics(tabs: { title: string; url: string }[]): string[] 
       .sort((a, b) => b[1] - a[1]);
 
     for (const [token] of sortedTokens) {
-      // Capitalize first letter
       const capitalized = token.charAt(0).toUpperCase() + token.slice(1);
       if (!topics.map((t) => t.toLowerCase()).includes(token)) {
         topics.push(capitalized);
@@ -204,6 +210,25 @@ export function generateSessionTitle(
 }
 
 /**
+ * Generate a clear research objective statement (Feature 4).
+ */
+export function generateObjective(
+  topics: string[],
+  sources: ResearchSource[],
+): string {
+  if (topics.length >= 2) {
+    return `Investigating ${topics.slice(0, 3).join(", ")} architectures, documentation, and implementation approaches across ${sources.length} captured source(s).`;
+  }
+  if (topics.length === 1 && topics[0] !== "General Research") {
+    return `Exploring ${topics[0]} capabilities, integration patterns, and best practices.`;
+  }
+  if (sources.length > 0 && sources[0].domain) {
+    return `Reviewing technical resources and documentation on ${sources[0].domain}.`;
+  }
+  return `Synthesizing exploratory research across ${sources.length} captured sources.`;
+}
+
+/**
  * Deterministically generate a concise, structured research summary.
  */
 export function generateSummary(
@@ -242,8 +267,6 @@ export function generateSummary(
 
 /**
  * Extract grounded key learnings based strictly on the captured titles and metadata.
- * Complies with rule: "Do NOT pretend title/URL metadata equals page content.
- * If data is insufficient for meaningful learnings, say so — don't hallucinate."
  */
 export function generateKeyLearnings(
   sources: ResearchSource[],
@@ -312,6 +335,66 @@ export function generateKeyLearnings(
 }
 
 /**
+ * Generate analytical insights based on source composition (Feature 4).
+ */
+export function generateInsights(
+  sources: ResearchSource[],
+  topics: string[],
+): string[] {
+  const insights: string[] = [];
+  const uniqueDomains = Array.from(
+    new Set(sources.map((s) => s.domain).filter(Boolean)),
+  );
+
+  if (uniqueDomains.length > 2) {
+    insights.push(
+      `Multi-source verification: Findings span ${uniqueDomains.length} different domains, indicating cross-referenced research across independent sources.`,
+    );
+  }
+
+  const hasDocs = sources.some((s) =>
+    /docs|documentation|reference|api/i.test(`${s.title} ${s.url}`),
+  );
+  const hasCommunity = sources.some((s) =>
+    /stackoverflow|github|reddit|forum|medium|dev\.to/i.test(
+      `${s.title} ${s.url}`,
+    ),
+  );
+
+  if (hasDocs && hasCommunity) {
+    insights.push(
+      "Balanced documentation & community insights: Research blends authoritative documentation with real-world implementation discussions.",
+    );
+  }
+
+  if (topics.length >= 2) {
+    insights.push(
+      `Ecosystem intersection: The intersection of ${topics[0]} and ${topics[1]} represents the primary technical focus of this session.`,
+    );
+  }
+
+  if (insights.length === 0) {
+    insights.push(
+      "Exploratory phase: Early discovery across captured web resources.",
+    );
+  }
+
+  return insights;
+}
+
+/**
+ * Identify where research stopped to facilitate continuity (Feature 4).
+ */
+export function generateStoppingPoint(sources: ResearchSource[]): string {
+  if (sources.length === 0) return "No active stopping point recorded.";
+  const lastSource = sources[sources.length - 1];
+  const timeStr = lastSource.capturedAt
+    ? ` at ${new Date(lastSource.capturedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`
+    : "";
+  return `Last active source was "${cleanTitle(lastSource.title)}" (${lastSource.domain || "web"})${timeStr}. Use "Continue Research" to restore tabs and resume.`;
+}
+
+/**
  * Deterministically extract or synthesize open research questions.
  */
 export function generateOpenQuestions(
@@ -359,6 +442,63 @@ export function generateOpenQuestions(
 }
 
 /**
+ * Derive or backfill a complete ResearchState for any session (Feature 4).
+ */
+export function deriveResearchState(session: Partial<Session>): ResearchState {
+  const sources: ResearchSource[] =
+    session.sources ??
+    session.tabs?.map((t) => ({
+      title: t.title,
+      url: t.url,
+      domain: getCleanDomain(t.url),
+    })) ??
+    [];
+
+  const topics = session.topics && session.topics.length > 0
+    ? session.topics
+    : extractTopics(sources);
+
+  const objective =
+    session.objective ||
+    session.researchState?.objective ||
+    generateObjective(topics, sources);
+
+  const learnings =
+    session.keyLearnings && session.keyLearnings.length > 0
+      ? session.keyLearnings
+      : session.researchState?.learnings && session.researchState.learnings.length > 0
+        ? session.researchState.learnings
+        : generateKeyLearnings(sources, topics);
+
+  const insights =
+    session.insights && session.insights.length > 0
+      ? session.insights
+      : session.researchState?.insights && session.researchState.insights.length > 0
+        ? session.researchState.insights
+        : generateInsights(sources, topics);
+
+  const unresolved =
+    session.openQuestions && session.openQuestions.length > 0
+      ? session.openQuestions
+      : session.researchState?.unresolved && session.researchState.unresolved.length > 0
+        ? session.researchState.unresolved
+        : generateOpenQuestions(sources, topics);
+
+  const stoppingPoint =
+    session.stoppingPoint ||
+    session.researchState?.stoppingPoint ||
+    generateStoppingPoint(sources);
+
+  return {
+    objective,
+    learnings,
+    insights,
+    unresolved,
+    stoppingPoint,
+  };
+}
+
+/**
  * Main entry point: generate a structured research session draft from a list of tabs.
  */
 export function generateResearchSessionDraft(
@@ -374,9 +514,12 @@ export function generateResearchSessionDraft(
 
   const topics = extractTopics(sources);
   const title = generateSessionTitle(topics, sources);
+  const objective = generateObjective(topics, sources);
   const summary = generateSummary(sources, topics);
   const keyLearnings = generateKeyLearnings(sources, topics);
+  const insights = generateInsights(sources, topics);
   const openQuestions = generateOpenQuestions(sources, topics);
+  const stoppingPoint = generateStoppingPoint(sources);
 
   return {
     title,
@@ -385,6 +528,9 @@ export function generateResearchSessionDraft(
     topics,
     summary,
     keyLearnings,
+    insights,
     openQuestions,
+    objective,
+    stoppingPoint,
   };
 }

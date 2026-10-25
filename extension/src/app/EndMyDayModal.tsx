@@ -144,7 +144,17 @@ export function EndMyDayModal({
       summary: summary.trim(),
       topics,
       keyLearnings,
+      insights: draft.insights,
       openQuestions,
+      objective: draft.objective,
+      stoppingPoint: draft.stoppingPoint,
+      researchState: {
+        objective: draft.objective,
+        learnings: keyLearnings,
+        insights: draft.insights,
+        unresolved: openQuestions,
+        stoppingPoint: draft.stoppingPoint,
+      },
     };
 
     try {

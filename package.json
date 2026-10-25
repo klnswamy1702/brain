@@ -7,9 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "ext:dev": "vite build --watch --config extension/vite.config.ts",
-    "ext:build": "vite build --config extension/vite.config.ts",
-    "ext:serve": "vite --config extension/vite.config.ts",
+    "ext:dev": "vite build --watch --config extension/vite.config.mts",
+    "ext:build": "vite build --config extension/vite.config.mts",
+    "ext:serve": "vite --config extension/vite.config.mts",
     "ext:typecheck": "tsc --noEmit --project extension/tsconfig.json"
   },
   "dependencies": {

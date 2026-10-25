@@ -1,827 +1,450 @@
-Yes. Since your goal is **to get a working Chrome Extension locally first**, I would make the antigravity prompts much more implementation-focused than the Blueprint plan.
+# Research Brain — Build Plan
 
-For the first local prototype, I strongly recommend:
+> **OneTab's simplicity + superintelligence + memory.**
+> A Chrome Extension that captures your research, remembers it, and helps you continue where you left off.
 
-**React + TypeScript + Tailwind + Chrome Manifest V3 + local storage first**, with the architecture kept ready for a backend later.
+**Stack:** React + TypeScript + Tailwind · Chrome Manifest V3 · `chrome.storage.local` · No backend for V1
 
-That lets you actually install the extension in Chrome and test the core loop before dealing with authentication, PostgreSQL, vector databases, and multiple AI providers.
-
-Use these prompts **one at a time**, in order. After each feature, let antigravity implement it, run the relevant checks, and verify it locally before moving to the next.
+**How to build:** One feature at a time, in order. Build → load in Chrome → verify → next feature.
 
 ---
 
-# Feature 1 — Chrome Extension Foundation
+## Phase 1 — Core Loop (Get it running in Chrome)
 
-Give this to Antigravity first:
+### Feature 1: Chrome Extension Foundation
 
-You are building Research Brain V1, a Chrome Extension-first product.
+**Goal:** A locally installable Chrome Extension shell.
 
-Read the existing repository and the Blueprint files before making changes:
+**What to build:**
 
-- blueprint/project-plan.md
-- blueprint/build-plan.md
-- blueprint/context/project-overview.md
-- existing package.json and project configuration
-
-Do not replace the existing framework unless the repository is not yet scaffolded.
-
-Implement ONLY Feature 1: Chrome Extension Foundation.
-
-Goal:
-
-Create a locally runnable Chrome Extension using the repository's existing frontend stack, preferably React + TypeScript + Tailwind if already present.
-
-Requirements:
-
-1. Create a Chrome Manifest V3 extension.
-2. Create a background service worker.
-3. Create the extension popup.
-4. Create a full extension application/page that can be opened from the extension.
-5. Establish clean separation between:
-   - popup UI
-   - extension application UI
-   - background service worker
-   - content scripts, where needed
-   - shared types/utilities
-6. Use TypeScript throughout.
-7. Add only the minimum Chrome permissions required for the current feature.
-8. Add extension-safe storage abstraction using chrome.storage.
-9. Add basic navigation between the popup and full extension page.
-10. Create a simple Research Brain UI shell containing:
-   - Research Brain title
-   - Search Memory placeholder
-   - End My Day button
+1. Chrome Manifest V3 with minimum required permissions
+2. Background service worker
+3. Extension popup UI
+4. Full extension page (opened from popup)
+5. Clean separation: popup / extension page / service worker / content scripts / shared types
+6. TypeScript throughout
+7. Storage abstraction using `chrome.storage.local`
+8. Navigation between popup and full extension page
+9. UI shell with:
+   - Research Brain title/branding
+   - "Search Memory" placeholder
+   - "End My Day" button
    - Recent Sessions placeholder
-11. Make the extension visually clean and usable, but do not spend time on advanced design.
-12. Make sure the generated build can be loaded using Chrome:
-   chrome://extensions → Developer mode → Load unpacked.
-13. Make the build output predictable and document the local build/load commands.
-14. Do not implement research capture, AI, backend, vector search, projects, or Brain Chat yet.
+10. Build output that loads via `chrome://extensions` → Developer mode → Load unpacked
 
-Important constraints:
+**Constraints:**
 
-- Do not introduce unnecessary libraries.
-- Do not create fake backend APIs.
-- Do not build features outside Feature 1.
-- Preserve existing project conventions.
-- Keep the architecture extensible for future features.
+- No research capture, AI, backend, vector search, or Brain Chat yet
+- No unnecessary libraries
+- No fake APIs
+- Keep architecture extensible
 
-Verification:
+**Verification:**
 
-1. Run the repository's existing lint/typecheck/build commands.
-2. Fix any errors caused by your implementation.
-3. Verify that the Chrome extension build succeeds.
-4. Verify that the popup loads.
-5. Verify that the full extension page loads.
-6. Report the exact local commands I should run to build and load the extension.
-
-At the end, summarize:
-- files changed
-- commands used
-- verification results
-- how to load the extension in Chrome
-
-Do not move on to Feature 2.
+- [ ] Lint/typecheck/build pass
+- [ ] Extension loads in Chrome
+- [ ] Popup renders
+- [ ] Full extension page renders
+- [ ] Document exact build + load commands
 
 ---
 
-# Feature 2 — Research Capture
+### Feature 2: Research Capture (Tab Collection)
 
-Once Feature 1 works in Chrome:
+**Goal:** Capture the user's open Chrome tabs into a local list — the core OneTab-like action.
 
-Continue the Research Brain V1 implementation.
+**What to build:**
 
-First inspect the current repository and the existing Feature 1 implementation. Read the Blueprint project/build plans and preserve the current architecture.
+1. "Capture Research" action in the UI (like OneTab's "send tabs to list")
+2. Capture for each tab: tab ID, URL, title, favicon, window ID, group ID, timestamp
+3. Background service worker for capture orchestration
+4. Typed `ResearchTab` and `ResearchActivity` models
+5. Store captured data in `chrome.storage.local`
+6. Show captured tab count after capture
+7. Display captured tabs as a clean list (title + URL + timestamp)
+8. Open any captured source from the list
+9. Deduplication — re-capturing the same tab doesn't create duplicates
+10. Capture tab groups where Chrome exposes them
+11. Keep capture modular for future page-content capture
 
-Implement ONLY Feature 2: Research Capture.
+**Privacy:**
 
-Goal:
+- Capture is explicit (user clicks the button)
+- Show exactly what was captured
+- No silent background capture
 
-Research Brain should be able to capture the user's current Chrome research context locally.
+**UX target:**
 
-For this local prototype, prioritize reliable Chrome functionality over backend integration.
-
-Implement:
-
-1. Capture currently open Chrome tabs.
-2. Capture for each tab:
-   - tab ID
-   - URL
-   - title
-   - window ID
-   - group ID where available
-   - timestamp
-3. Add a background service worker responsible for capture orchestration.
-4. Create a typed ResearchTab model.
-5. Create a typed ResearchActivity model.
-6. Store captured data using chrome.storage.local.
-7. Add a "Capture Research" action to the extension UI.
-8. Show the number of captured tabs after capture.
-9. Show captured tabs in the extension UI.
-10. Allow the user to open a captured source from the UI.
-11. Add basic deduplication so repeatedly capturing the same tab does not create uncontrolled duplicates.
-12. Preserve timestamps for later session generation.
-13. Capture tab groups where Chrome exposes them.
-14. Keep the capture implementation modular so page-content capture can be added later.
-15. Do not yet implement AI summarization.
-16. Do not yet implement semantic search.
-17. Do not yet implement external backend APIs.
-18. Do not yet implement ChatGPT/Gemini/Copilot scraping unless it is required to establish a clean abstraction. For this feature, the basic tab capture is the priority.
-
-Privacy:
-
-- Make capture explicit.
-- Show the user what was captured.
-- Do not silently capture all browsing activity.
-- Do not collect unrelated information beyond what is needed for this feature.
-
-UX:
-
-The extension should show something similar to:
-
+```
 Research Brain
 
 [Capture Research]
 
-Captured:
-12 tabs
+Captured: 12 tabs
 
 Recent Capture
-- Title
-  URL
-  timestamp
+ - Tab Title
+   https://example.com
+   Oct 21, 2026
+```
 
-Verification:
+**Constraints:**
 
-1. Run typecheck/lint/build.
-2. Fix errors.
-3. Build the Chrome extension.
-4. Load it into Chrome.
-5. Open several tabs.
-6. Click Capture Research.
-7. Confirm all expected tabs appear.
-8. Close/reopen the extension and verify captured data persists.
+- No AI summarization yet
+- No semantic search yet
+- No backend APIs
 
-Do not move on to Feature 3.
+**Verification:**
+
+- [ ] Open several tabs → click Capture Research → all tabs appear
+- [ ] Close/reopen extension → captured data persists
+- [ ] Re-capture → no duplicates
+- [ ] Build passes
 
 ---
 
-# Feature 3 — End My Day
+### Feature 3: End My Day (Session Generation)
 
-This is where the prototype starts becoming interesting.
+**Goal:** Turn captured tabs into a Research Session — the moment raw tabs become structured knowledge.
 
-Continue Research Brain V1 from the existing implementation.
+**What to build:**
 
-Read the Blueprint plans and inspect the existing capture implementation.
-
-Implement ONLY Feature 3: End My Day.
-
-Goal:
-
-Turn the captured Chrome research context into a Research Session.
-
-For this local prototype, use a deterministic/local summarization strategy if no AI API is configured. Do not block the feature on external API credentials.
-
-Implement:
-
-1. Add an "End My Day" action in the extension.
-2. When clicked, show an End My Day review modal/page.
-3. Display:
-   - number of tabs captured
-   - captured tab titles
-   - source URLs
-   - capture timestamp
-4. Generate a Research Session object.
-5. The session should contain:
-   - session ID
-   - title
-   - createdAt
-   - captured tab IDs
-   - sources
-   - summary
-   - topics
-   - key learnings
+1. "End My Day" action in the extension
+2. End My Day review modal/page showing:
+   - Number of tabs captured
+   - Captured tab titles and URLs
+   - Capture timestamps
+3. Generate a `ResearchSession` object:
+   - session ID, title, createdAt
+   - captured tab references
+   - sources list
+   - summary (generated from titles/metadata)
+   - topics (extracted from content)
+   - key learnings (only where justified by data)
    - open questions
-6. Create a sensible session title from the captured research content.
-7. Generate a basic summary from the captured titles/metadata.
-8. Extract basic topics from the research content.
-9. Generate basic key-learning placeholders only where justified by available data.
-10. Do not invent facts that were never captured.
-11. Clearly mark information as unavailable when the captured data is insufficient.
-12. Allow the user to review the generated session before saving.
-13. Provide:
-   - Save Session
-   - Cancel
-14. Persist saved Research Sessions using chrome.storage.local.
-15. After saving, show a confirmation.
-16. Add the saved session to Recent Sessions.
-17. Make the flow usable without a backend.
+4. Session title auto-generated from captured research content
+5. User reviews the session before saving
+6. Save / Cancel actions
+7. Persist saved sessions in `chrome.storage.local`
+8. Confirmation after save
+9. Saved session appears in Recent Sessions
 
-Very important:
+**Important:**
 
-Do NOT pretend that title/URL metadata is equivalent to page content.
+- Do NOT pretend title/URL metadata equals page content
+- If data is insufficient for meaningful learnings, say so — don't hallucinate
+- Use deterministic local summarization (no AI API required)
 
-If the current capture layer does not contain enough information to generate meaningful learnings, say so in the UI rather than hallucinating.
+**UX target:**
 
-UX target:
-
+```
 End My Day
 
 52 tabs captured
 
 Detected topics:
-- Kubernetes
-- AWS
-- DevOps
+ - Kubernetes
+ - AWS
+ - DevOps
 
-Summary:
-...
+Summary: ...
 
-Key Learnings:
-...
+Key Learnings: ...
 
-Open Questions:
-...
+Open Questions: ...
 
-[Cancel] [Save Session]
+[Cancel]  [Save Session]
+```
 
-Do not implement semantic search, Brain Chat, projects, or internet research yet.
+**Verification:**
 
-Verification:
-
-Run lint/typecheck/build and test the actual extension in Chrome.
-
-Manually verify:
-- capture research
-- click End My Day
-- review session
-- save session
-- close popup
-- reopen extension
-- confirm the session remains available
-
-Do not move on to Feature 4.
+- [ ] Capture research → End My Day → review → save
+- [ ] Session persists after closing/reopening extension
+- [ ] Cancel discards the session
+- [ ] Build passes
 
 ---
 
-# Feature 4 — Session Detail
+### Feature 4: Session Detail & Research State
 
-Continue Research Brain V1.
+**Goal:** Make a saved session useful even after original tabs are closed — your research notebook.
 
-Inspect the current implementation and Blueprint plans.
+**What to build:**
 
-Implement ONLY Feature 4: Session Detail and Research State.
+1. Session Detail page showing:
+   - Session title
+   - Date/time
+   - Research objective (where available)
+   - Summary
+   - Topics
+   - Key learnings
+   - Insights (if available)
+   - Open questions
+   - Captured sources with original URLs
+   - Tab count
+2. "Continue Research" action
+3. "Delete Session" action
+4. `ResearchState` model representing:
+   - What was being researched
+   - What was learned
+   - What remains unresolved
+   - Where research stopped
 
-Goal:
+**Important:**
 
-Make a saved research session useful even when the original browser tabs are closed.
+- Never fabricate conclusions
+- Distinguish captured info from generated interpretation
+- Every source links to the original URL
+- Preserve original timestamps
+- UX should feel like an auto-generated research notebook, not browser history
 
-Implement a Session Detail experience containing:
+**Verification:**
 
-1. Session title.
-2. Date/time.
-3. Research objective where available.
-4. Summary.
-5. Topics.
-6. Key learnings.
-7. Insights if available.
-8. Open questions.
-9. Captured sources.
-10. Original source URLs.
-11. Number of captured tabs.
-12. Continue Research action.
-13. Delete Session action.
-
-Add a Research State model/concept.
-
-Research State should represent:
-
-- what the user was researching
-- what was learned
-- what remains unresolved
-- where the research stopped
-
-Do not create a complex graph database or separate graph infrastructure.
-
-Use the current local storage architecture.
-
-Important:
-
-- Never fabricate a user's conclusion.
-- Clearly distinguish captured information from generated interpretation.
-- Every source shown in the session must link to the original URL.
-- Preserve the original timestamp.
-
-UX should feel like a research notebook generated automatically from the browser session, not like browser history.
-
-Verification:
-
-- open a previously saved session
-- verify all information is displayed
-- open source links
-- delete a session
-- verify deletion persists after reopening the extension
-- run build/typecheck/lint
-
-Do not move on to Feature 5.
+- [ ] Open a saved session → all info displayed correctly
+- [ ] Source links open correctly
+- [ ] Delete session → deletion persists after restart
+- [ ] Build passes
 
 ---
 
-# Feature 5 — Research Memory + Search
+## Phase 2 — Intelligence Layer (Make it smart)
 
-Now introduce actual retrieval.
+### Feature 5: Research Memory + Search
 
-For the first local test, you can use a lightweight local search before introducing pgvector.
+**Goal:** Search your saved research with natural language — "What did I learn about MCP?"
 
-Continue Research Brain V1.
+**What to build:**
 
-Read the current implementation and Blueprint plans.
+1. Search input in the main Research Brain UI
+2. Natural-language search across:
+   - Session titles, summaries, topics
+   - Learnings, open questions
+   - Captured tab titles and URLs
+3. Local relevance ranking
+4. Results grouped by session
+5. Highlight relevant text
+6. Show source URLs and session dates
+7. Show related sessions
+8. Open matching Session Detail or original source
+9. Clean `SearchResult` model
+10. Abstract retrieval interface (swappable for future vector/embedding search)
 
-Implement ONLY Feature 5: Research Memory and Search.
+**Example queries:**
 
-Goal:
+- "What did I learn about MCP?"
+- "What did I research about AWS?"
+- "When did I research DCF?"
+- "Show me my Kubernetes research"
 
-Allow the user to search their saved research using natural language.
+**Constraints:**
 
-For this first local prototype, do NOT introduce PostgreSQL, Qdrant, or a remote vector database yet.
+- Search only stored data — no internet searches
+- Show clear empty state for no results
+- No Brain Chat yet
 
-Build a modular local retrieval layer that can later be replaced with embeddings/vector search.
+**Verification:**
 
-Search across:
-
-- Research Sessions
-- session titles
-- summaries
-- topics
-- learnings
-- open questions
-- captured tab titles
-- URLs
-
-Implement:
-
-1. Search input in the Research Brain UI.
-2. Natural-language search.
-3. Local relevance ranking.
-4. Result grouping by session.
-5. Highlight relevant text where practical.
-6. Show source URLs.
-7. Show session dates.
-8. Show related sessions.
-9. Allow the user to open the matching Session Detail page.
-10. Allow the user to open the original source.
-
-Example queries:
-
-"What did I learn about MCP?"
-
-"What did I research about AWS?"
-
-"When did I research DCF?"
-
-"Show me my Kubernetes research."
-
-Create a clean SearchResult model.
-
-Keep the retrieval interface abstract enough that a future semantic/vector implementation can replace the local search implementation without rewriting the UI.
-
-Important:
-
-- Do not hallucinate answers.
-- Search only stored data.
-- Clearly show when there are no matching memories.
-- Do not perform internet searches.
-- Do not add Brain Chat yet.
-
-UX target:
-
-Search Memory
-
-[ What did I learn about MCP? ]
-
-Results
-
-MCP Research
-September 30
-Relevant memory...
-
-Sources:
-...
-
-Verification:
-
-Create several test sessions through the actual UI.
-
-Test multiple natural-language queries.
-
-Verify:
-- relevant sessions appear
-- irrelevant sessions rank lower
-- source links work
-- dates are shown
-- no-result searches are handled
-- data survives extension restart
-
-Run all available checks and build the extension.
-
-Do not move on to Feature 6.
+- [ ] Create several sessions → search with various queries
+- [ ] Relevant sessions rank higher
+- [ ] Source links work
+- [ ] No-result case handled gracefully
+- [ ] Data survives extension restart
+- [ ] Build passes
 
 ---
 
-# Feature 6 — Brain Chat
+### Feature 6: Brain Chat
 
-Now you can make the “AI Brain” experience.
+**Goal:** Ask conversational questions about your research and get grounded, cited answers.
 
-For your first local test, configure it so it can work with an API key if provided, but don't compromise the rest of the extension if no key exists.
+**What to build:**
 
-Continue Research Brain V1.
+1. Brain Chat UI inside the extension
+2. Flow: User question → retrieve relevant memory → generate grounded answer → display with citations
+3. AI provider abstraction:
+   - Works with API key when configured
+   - Deterministic local fallback when no key exists
+   - Never hardcode or expose API keys in client code
+4. Answer classification:
+   - **REMEMBERED** — directly from stored research
+   - **SYNTHESIZED** — conclusion from combining research
+   - **UNKNOWN** — not in stored research
+5. Citation model showing: session title, date, source title, source URL
+6. Every answer backed by citations
 
-Inspect the existing memory/search implementation before changing anything.
+**Example queries:**
 
-Implement ONLY Feature 6: Brain Chat.
+- "What have I learned about silver demand?"
+- "What did I conclude about DCF?"
+- "What sources did I use for Kubernetes networking?"
+- "What questions were still unanswered?"
 
-Goal:
+**Constraints:**
 
-Allow the user to ask conversational questions about their stored research.
+- No internet searches
+- No autonomous agents
+- No Projects yet
+- Extension must work fully without an API key
 
-Create a Brain Chat experience inside the extension.
+**Verification:**
 
-Examples:
-
-"What have I learned about silver demand?"
-
-"What did I conclude about DCF?"
-
-"What sources did I use for Kubernetes networking?"
-
-"What questions were still unanswered?"
-
-Architecture:
-
-1. User submits a question.
-2. Research Brain retrieves relevant stored memory.
-3. Retrieved memory is passed to the answer-generation layer.
-4. The answer-generation layer returns a grounded response.
-5. The UI displays supporting citations.
-
-For local development:
-
-- create a clear AI provider abstraction
-- support an environment/configured API key when available
-- provide a deterministic local fallback when no API key is configured
-- never hardcode API keys into the extension
-- never expose secret API credentials in client-side source code
-
-The answer-generation layer must distinguish:
-
-REMEMBERED:
-Information directly found in stored research.
-
-SYNTHESIZED:
-A conclusion created by combining retrieved research.
-
-UNKNOWN:
-Information not supported by stored research.
-
-Every answer should show citations containing, where available:
-
-- session title
-- session date
-- source title
-- source URL
-
-Create a reusable Citation model.
-
-Do not perform internet searches.
-
-Do not implement autonomous agents.
-
-Do not implement rabbit holes.
-
-Do not implement Projects yet.
-
-Verification:
-
-Test:
-
-"What did I research about AWS?"
-
-"What did I learn about MCP?"
-
-"What was my conclusion about silver?"
-
-Verify that answers are grounded in stored sessions.
-
-Verify citations link back to the actual stored sources.
-
-Test the system without an API key and make sure the extension still behaves correctly.
-
-Run lint/typecheck/build.
-
-Do not move on to Feature 7.
+- [ ] Ask research questions → get grounded answers with citations
+- [ ] Citations link to actual stored sources
+- [ ] Works without API key (graceful fallback)
+- [ ] Build passes
 
 ---
 
-# Feature 7 — Continue Research
+### Feature 7: Continue Research
 
-This feature is crucial because it differentiates your product from bookmarks.
+**Goal:** Resume previous research with context, not just reopened tabs — this is what makes Brain different from bookmarks.
 
-Continue Research Brain V1.
+**What to build:**
 
-Inspect the existing Session Detail, capture, memory, and Brain Chat implementations.
+1. Continue Research experience from a saved session:
+   - Where I left off
+   - Research objective
+   - Current Research State
+   - Key learnings
+   - Open questions
+   - Important sources
+   - Suggested next starting point
+2. Actions:
+   - **Continue From Last Thinking** — show Research State, start from that context
+   - **Open Important Sources** — open only highest-value stored sources
+   - **Open Selected Sources** — user picks which to reopen
+   - **Restore Session** — recreate the previous tab set
+   - **Ask Research Brain** — open Brain Chat with session as context
 
-Implement ONLY Feature 7: Continue Research.
+**Important:**
 
-Goal:
+- "Restore all tabs" is NOT the default — research continuity > tab restoration
+- Handle tabs that can no longer be opened (show as unavailable)
+- Use Chrome APIs safely
 
-Allow the user to resume previous research without simply reopening every old tab.
+**Verification:**
 
-When the user clicks Continue Research from a saved session, show a continuation experience containing:
-
-1. Where I left off.
-2. Research objective.
-3. Current Research State.
-4. Key learnings.
-5. Open questions.
-6. Important sources.
-7. Suggested next starting point.
-
-Provide these actions:
-
-- Continue From Last Thinking
-- Open Important Sources
-- Open Selected Sources
-- Restore Session
-- Ask Research Brain
-
-Behavior:
-
-Continue From Last Thinking:
-Show the Research State and allow the user to start from that context.
-
-Open Important Sources:
-Open only the highest-value stored sources.
-
-Open Selected Sources:
-Allow the user to select which sources to reopen.
-
-Restore Session:
-Recreate the previous tab set where possible.
-
-Ask Research Brain:
-Open Brain Chat with the previous session already selected as context.
-
-Important:
-
-Do NOT make "restore all tabs" the default behavior.
-
-The product's value is research continuity, not tab restoration.
-
-Use Chrome APIs safely and handle tabs that can no longer be opened.
-
-If a source is unavailable, display the source as unavailable instead of failing the entire workflow.
-
-Verification:
-
-1. Save a research session.
-2. Close its original browser tabs.
-3. Reopen Research Brain.
-4. Open the session.
-5. Click Continue Research.
-6. Continue from the saved context.
-7. Open important sources.
-8. Restore selected sources.
-9. Restore the complete session.
-
-Run all checks and build the extension.
-
-Do not move on to Feature 8.
+- [ ] Save session → close tabs → reopen Brain → Continue Research
+- [ ] Open important sources works
+- [ ] Restore selected sources works
+- [ ] Full session restore works
+- [ ] Build passes
 
 ---
 
-# Feature 8 — Home Dashboard
-
-Continue Research Brain V1.
-
-Inspect the existing extension features.
-
-Implement ONLY Feature 8: Home / Research Brain Dashboard.
-
-Create the primary extension experience.
-
-The dashboard should provide:
-
-## Header
-
-Research Brain
-
-## Primary Search
-
-Ask:
-
-"What did I learn about...?"
-
-## Primary Action
-
-[End My Day]
-
-## Recent Sessions
-
-Show the most recent saved sessions with:
-
-- title
-- date
-- topics
-- short summary
-- Continue Research action
-
-## Recent Activity
-
-Show recent captured research activity.
-
-## Last Research Session
-
-Provide an obvious Continue Research action.
-
-## Projects
-
-Show projects if they exist, otherwise an appropriate empty state.
-
-## Suggested Topics
-
-Display recurring topics based only on stored research.
-
-Keep the design simple and fast.
-
-The dashboard should feel like a personal research command center.
-
-Important:
-
-- do not introduce a large dashboard framework
-- do not add unnecessary analytics
-- do not create features not defined in the Blueprint plan
-- keep all existing workflows working
-
-Ensure the extension is responsive within Chrome's available surfaces.
-
-Verification:
-
-- dashboard loads quickly
-- End My Day works
-- Search works
-- sessions open
-- Continue Research works
-- Brain Chat works
-- empty states work for a brand-new installation
-- build/typecheck/lint pass
-
-Do not move on to Feature 9.
+> **🎯 MVP checkpoint after Feature 7** — At this point you have the minimum viable Research Brain:
+> `Capture → End My Day → Save → Close Browser → Come Back → Search Memory → Ask Brain → Continue Research`
+> This is worth installing in Chrome and actually using before building more.
 
 ---
 
-# Feature 9 — Lightweight Research Projects
+## Phase 3 — Polish & Power Features
 
-Continue Research Brain V1.
+### Feature 8: Home Dashboard
 
-Inspect the current application and Blueprint plans.
+**Goal:** A personal research command center as the primary extension experience.
 
-Implement ONLY Feature 9: Lightweight Research Projects.
+**What to build:**
 
-Goal:
+1. **Header:** Research Brain branding
+2. **Primary Search:** "What did I learn about...?"
+3. **Primary Action:** End My Day button
+4. **Recent Sessions:** title, date, topics, summary, Continue Research action
+5. **Recent Activity:** latest captured research
+6. **Last Research Session:** prominent Continue Research
+7. **Projects:** show if they exist, otherwise empty state
+8. **Suggested Topics:** recurring topics from stored research only
 
-Allow users to turn recurring research into a persistent project.
+**Constraints:**
 
-Implement:
+- No heavy dashboard frameworks
+- No unnecessary analytics
+- Keep all existing workflows working
+- Responsive within Chrome's available surfaces
+- Fast loading
 
-1. Create Project.
-2. Project title.
-3. Project objective.
-4. Project description where useful.
-5. Add/remove Research Sessions from a project.
-6. Show project sessions.
-7. Show project sources.
-8. Show project insights.
-9. Show project open questions.
-10. Show project Research State.
-11. Open a session from the project.
-12. Search within project memory.
-13. Delete/archive project.
+**Verification:**
 
-Add optional project suggestions based on repeated topics/session relationships.
-
-Suggestions must remain user-controlled.
-
-Example:
-
-"You have 4 research sessions related to Silver Investing."
-
-[Create Project]
-
-Do not build:
-
-- collaboration
-- permissions
-- team projects
-- advanced graph visualization
-- project automation
-- autonomous research
-
-Keep projects lightweight.
-
-Verification:
-
-- create project
-- attach sessions
-- remove sessions
-- open project
-- open session from project
-- search project
-- delete project
-- verify persistence after extension restart
-
-Run build/typecheck/lint.
-
-Do not move on to Feature 10.
+- [ ] Dashboard loads quickly
+- [ ] All existing features (End My Day, Search, Sessions, Continue, Brain Chat) work from dashboard
+- [ ] Empty state works for new installation
+- [ ] Build passes
 
 ---
 
-# Feature 10 — Privacy & Transparency
+### Feature 9: Lightweight Research Projects
 
-Continue Research Brain V1.
+**Goal:** Group related research sessions into persistent projects.
 
-Implement ONLY Feature 10: Privacy and Trust Controls.
+**What to build:**
 
-Goal:
+1. Create / delete / archive project
+2. Project: title, objective, description
+3. Add/remove sessions from a project
+4. Project view: sessions, sources, insights, open questions, Research State
+5. Open a session from within the project
+6. Search within project memory
+7. Optional project suggestions: "You have 4 sessions related to Silver Investing — [Create Project]"
+8. Suggestions are user-controlled, not automatic
 
-Make it obvious what Research Brain captures and give the user control over their data.
+**Not building:**
 
-Implement:
+- Collaboration, permissions, team features
+- Advanced graph visualization
+- Project automation or autonomous research
 
-1. Capture status.
-2. Pause Capture.
-3. Resume Capture.
-4. Captured-data viewer.
-5. Show:
-   - what was captured
-   - when it was captured
-   - source URL
-   - session association
-6. Delete individual research session.
-7. Delete captured research data.
-8. Domain exclusion list.
-9. Prevent capture on excluded domains.
-10. Clear empty/paused states.
-11. Confirmation before destructive deletion.
-12. Provide a simple privacy/settings screen.
+**Verification:**
 
-The UX should communicate:
-
-"What was captured?"
-
-"When was it captured?"
-
-"Why was it captured?"
-
-Important:
-
-- do not claim security mechanisms that are not actually implemented
-- do not silently collect information
-- do not expand permissions unnecessarily
-- keep privacy controls understandable
-
-Verification:
-
-- pause capture
-- verify capture stops
-- resume capture
-- exclude a domain
-- verify excluded domain is not captured
-- delete sessions
-- verify deletion is permanent from local storage
-- inspect extension permissions
-- build/typecheck/lint
-
-Do not move on to Feature 11.
+- [ ] Create project → attach sessions → search within → delete project
+- [ ] Persistence survives extension restart
+- [ ] Build passes
 
 ---
 
-# Feature 11 — V1 End-to-End Validation
+### Feature 10: Privacy & Transparency
 
-This should be the final prompt.
+**Goal:** Make it obvious what Brain captures and give users full control over their data.
 
-Research Brain V1 is now implemented.
+**What to build:**
 
-Do NOT add new product features.
+1. Capture status indicator (active/paused)
+2. Pause / Resume capture
+3. Captured data viewer: what, when, source URL, session association
+4. Delete individual sessions
+5. Delete captured research data
+6. Domain exclusion list (prevent capture on excluded domains)
+7. Confirmation before destructive deletion
+8. Simple privacy/settings screen
 
-Perform a complete V1 audit and local validation against:
+**UX communicates:**
 
-- blueprint/project-plan.md
-- blueprint/build-plan.md
-- blueprint/context/project-overview.md
+- "What was captured?"
+- "When was it captured?"
+- "Why was it captured?"
 
-Validate the complete user journey:
+**Constraints:**
 
-```text id="u42v6f"
+- Don't claim security not actually implemented
+- Don't silently collect information
+- Don't expand permissions unnecessarily
+
+**Verification:**
+
+- [ ] Pause → verify capture stops → Resume → verify capture resumes
+- [ ] Exclude domain → verify it's not captured
+- [ ] Delete sessions → verify permanent deletion
+- [ ] Inspect extension permissions
+- [ ] Build passes
+
+---
+
+### Feature 11: V1 End-to-End Validation
+
+**Goal:** Full audit — no new features, just make sure everything works together.
+
+**Validate the complete journey:**
+
+```
 Install Extension
       ↓
 Open Research Tabs
@@ -830,9 +453,7 @@ Capture Research
       ↓
 End My Day
       ↓
-Review Session
-      ↓
-Save Session
+Review & Save Session
       ↓
 Close Tabs / Browser
       ↓
@@ -851,156 +472,31 @@ Open Important Sources
 Resume Thinking
 ```
 
-Test the following:
+**Test areas:** Chrome Extension, Capture, End My Day, Memory/Search, Brain Chat, Continue Research, Projects, Privacy
 
-## Chrome Extension
+**Also check:** TypeScript errors, lint errors, build errors, broken imports, Manifest V3 issues, service worker issues, storage issues, navigation, performance, UX
 
-- installation
-- popup
-- extension page
-- service worker
-- permissions
-- storage
+**Deliverables:**
 
-## Capture
+1. Feature-by-feature status
+2. Bugs found & fixed
+3. Remaining limitations
+4. Exact local commands to build & load
+5. Chrome installation/test procedure
+6. V2 recommendations
 
-- multiple tabs
-- duplicate capture behavior
-- timestamps
-- persistence
-
-## End My Day
-
-- session generation
-- review
-- save
-- persistence
-
-## Memory
-
-- search
-- relevance
-- no-result behavior
-
-## Brain Chat
-
-- grounded answers
-- citations
-- unsupported questions
-- no API-key behavior
-
-## Continue Research
-
-- context restoration
-- selected sources
-- complete session restoration
-
-## Projects
-
-- project creation
-- session association
-- persistence
-
-## Privacy
-
-- pause capture
-- resume capture
-- domain exclusions
-- deletion
-
-Also check:
-
-- TypeScript errors
-- lint errors
-- build errors
-- broken imports
-- Chrome Manifest V3 issues
-- service-worker issues
-- storage issues
-- extension navigation issues
-- performance problems
-- obvious UX problems
-
-Do not redesign the application or introduce new infrastructure.
-
-Fix only issues required for V1 correctness and reliability.
-
-At the end produce:
-
-1. V1 feature-by-feature status.
-2. Bugs found.
-3. Bugs fixed.
-4. Remaining limitations.
-5. Exact local commands to run.
-6. Exact Chrome installation/test procedure.
-7. Recommended next steps for V2.
-
-Most importantly, validate whether this product actually proves:
-
-> "I can close my research because Research Brain remembers where I left off."
+**The product must prove:** _"I can close my research because Research Brain remembers where I left off."_
 
 ---
 
-# How I would actually run this in antigravity
+## Build Workflow
 
-Don't paste all 11 prompts together.
+For each feature:
 
-Use the Blueprint lifecycle for each one:
-
-```text
-/feature
+```
+Build → Load in Chrome → Verify → Fix issues → Next feature
 ```
 
-Review the generated feature specification.
+**Stop after Feature 7 for your first real test.** That's the minimum viable loop worth using daily.
 
-Then:
-
-```text
-/implement
-```
-
-Then:
-
-```text
-/check
-```
-
-Then:
-
-```text
-/audit current
-```
-
-Then:
-
-```text
-/complete
-```
-
-Then move to the next feature.
-
-For your **first local test**, I would stop after **Feature 7** before building Projects. At that point you already have the genuinely interesting loop:
-
-```text
-Chrome
-  ↓
-Capture
-  ↓
-End My Day
-  ↓
-Save Research
-  ↓
-Close Browser
-  ↓
-Come Back
-  ↓
-Search Memory
-  ↓
-Ask Brain
-  ↓
-Continue Research
-```
-
-That is the **minimum viable Research Brain** worth putting in Chrome and actually using yourself.
-
-One important adjustment: **don't let Antigravity build PostgreSQL + pgvector + FastAPI + OAuth + multiple AI integrations before you have tested this browser loop.** For a local proof-of-concept, `chrome.storage.local` plus a replaceable retrieval/AI abstraction will let you discover whether the product experience is actually valuable before infrastructure becomes the project.
+**Don't build PostgreSQL, pgvector, FastAPI, OAuth, or multi-provider AI before this local loop is tested.** `chrome.storage.local` + a replaceable retrieval/AI abstraction will prove whether the product is valuable.

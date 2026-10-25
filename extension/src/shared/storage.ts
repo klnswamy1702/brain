@@ -4,6 +4,7 @@ const DEFAULTS: StorageSchema = {
   sessions: [],
   currentSessionId: null,
   geminiApiKey: null,
+  tabGroups: [],
 };
 
 const isExtension =
@@ -45,7 +46,8 @@ export const storage = {
     const sessions = await this.get("sessions");
     const currentSessionId = await this.get("currentSessionId");
     const geminiApiKey = await this.get("geminiApiKey");
-    return { sessions, currentSessionId, geminiApiKey };
+    const tabGroups = await this.get("tabGroups");
+    return { sessions, currentSessionId, geminiApiKey, tabGroups };
   },
 
   async clear(): Promise<void> {

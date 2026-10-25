@@ -2,19 +2,21 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { resolve } from "path";
 
+const root = import.meta.dirname;
+
 export default defineConfig({
   plugins: [react()],
-  root: resolve(__dirname, "src"),
-  publicDir: resolve(__dirname, "public"),
+  root: resolve(root, "src"),
+  publicDir: resolve(root, "public"),
   base: "./",
   build: {
-    outDir: resolve(__dirname, "dist"),
+    outDir: resolve(root, "dist"),
     emptyOutDir: true,
     rollupOptions: {
       input: {
-        popup: resolve(__dirname, "src/popup.html"),
-        app: resolve(__dirname, "src/app.html"),
-        "service-worker": resolve(__dirname, "src/background/service-worker.ts"),
+        popup: resolve(root, "src/popup.html"),
+        app: resolve(root, "src/app.html"),
+        "service-worker": resolve(root, "src/background/service-worker.ts"),
       },
       output: {
         entryFileNames: "[name].js",

@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Research Brain",
-  "version": "0.1.0",
-  "description": "Your second brain for research sessions",
-  "permissions": ["storage", "tabs"],
+  "version": "0.2.0",
+  "description": "Your second brain for research — capture, close, and restore tabs like OneTab with intelligence",
+  "permissions": ["storage", "tabs", "tabGroups"],
   "action": {
     "default_popup": "popup.html",
     "default_title": "Research Brain"
